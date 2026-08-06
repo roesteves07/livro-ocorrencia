@@ -1091,17 +1091,25 @@
     }
 
     function sectionTitle(t){
-      ensureSpace(24);
+      ensureSpace(28);
       doc.setFont('helvetica','bold');
       doc.setFontSize(11);
       doc.setTextColor(31,110,51);
       doc.text(t, marginX, y);
       doc.setTextColor(20,20,20);
-      y += 8;
+      y += 18;
     }
 
     function table(head, rows){
-      if(!rows.length) return;
+      if(!rows.length){
+        doc.setFont('helvetica','italic');
+        doc.setFontSize(9);
+        doc.setTextColor(120,120,120);
+        doc.text('Nenhum registro informado.', marginX, y);
+        doc.setTextColor(20,20,20);
+        y += 20;
+        return;
+      }
       doc.autoTable({
         startY: y,
         head:[head],
