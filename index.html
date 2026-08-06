@@ -336,6 +336,19 @@
   }
   .modal-box h3{font-size:16px;margin:0 0 4px;}
   .modal-box .modal-sub{font-size:12.5px;color:var(--gray);margin-bottom:18px;}
+  .modal-form{display:flex;flex-direction:column;gap:6px;}
+  .modal-form label{font-size:12px;font-weight:600;color:var(--ink);margin-top:8px;}
+  .modal-form input,.modal-form select{
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:9px 10px;
+    font-family:inherit;
+    font-size:13.5px;
+    color:var(--ink);
+    background:#fff;
+  }
+  .modal-form input:focus,.modal-form select:focus{outline:2px solid var(--green);outline-offset:1px;}
+  .handoff-error{display:none;color:var(--danger);font-size:11.5px;margin-top:6px;}
   .modal-actions{display:flex;flex-direction:column;gap:9px;}
   .action-btn{
     display:flex;
@@ -524,7 +537,9 @@
       atualizadoEm:'',
       finalizado:false,
       finalizadoPor:'',
-      finalizadoEm:''
+      finalizadoEm:'',
+      operadorPassando:'',
+      operadorRecebendo:''
     };
   }
 
@@ -646,7 +661,7 @@
       <div class="day-head">
         <div>
           <h2>${fieldDateLabel()}</h2>
-          ${data.finalizado ? `<div style="margin-top:6px;"><span class="finalized-badge">✓ Plantão finalizado${data.finalizadoPor ? ' por ' + escapeHtml(data.finalizadoPor) : ''}${data.finalizadoEm ? ' às ' + formatDT(data.finalizadoEm) : ''} <button class="reopen-btn" id="reopenBtn">reabrir edição</button></span></div>` : ''}
+          ${data.finalizado ? `<div style="margin-top:6px;"><span class="finalized-badge">✓ Plantão finalizado${(data.operadorPassando || data.operadorRecebendo) ? ' — ' + escapeHtml(data.operadorPassando || '?') + ' → ' + escapeHtml(data.operadorRecebendo || '?') : ''}${data.finalizadoEm ? ' às ' + formatDT(data.finalizadoEm) : ''} <button class="reopen-btn" id="reopenBtn">reabrir edição</button></span></div>` : ''}
         </div>
         <div class="save-area">
           <span class="save-status" id="saveStatus">${data.atualizadoEm ? 'Última atualização: ' + formatDT(data.atualizadoEm) + (data.atualizadoPor ? ' por ' + escapeHtml(data.atualizadoPor) : '') : 'Ainda sem registro salvo'}</span>
@@ -709,7 +724,7 @@
     document.getElementById('noturnoText').addEventListener('input', e=>{ data.noturno = e.target.value; scheduleAutosave(); });
     document.getElementById('saveBtn').onclick = ()=> saveDay(true);
     document.getElementById('exportBtn').onclick = ()=> openExportModal(false);
-    document.getElementById('finalizeBtn').onclick = ()=> finalizePlantao();
+    document.getElementById('finalizeBtn').onclick = ()=> openHandoffModal();
     const reopenBtn = document.getElementById('reopenBtn');
     if(reopenBtn){
       reopenBtn.onclick = ()=>{
@@ -965,15 +980,61 @@
     }catch(e){ return iso; }
   }
 
-  async function finalizePlantao(){
+  async function finalizePlantao(operadorPassando, operadorRecebendo){
     if(!state.selectedDay) return;
     const data = state.currentData;
     data.finalizado = true;
     data.finalizadoPor = state.operatorName || 'Operador';
     data.finalizadoEm = new Date().toISOString();
+    data.operadorPassando = operadorPassando || '';
+    data.operadorRecebendo = operadorRecebendo || '';
     await saveDay(true);
     renderDayPanel();
     openExportModal(true);
+  }
+
+  function openHandoffModal(){
+    const root = document.getElementById('modalRoot');
+    const data = state.currentData;
+    root.innerHTML = `
+      <div class="modal-overlay" id="modalOverlay">
+        <div class="modal-box">
+          <h3>Passagem de plantão</h3>
+          <div class="modal-sub">Informe quem está passando e quem está recebendo o plantão antes de finalizar.</div>
+          <div class="modal-form">
+            <label for="handoffFrom">Operador que está passando o plantão</label>
+            <select id="handoffFrom">
+              <option value="">Selecione o operador</option>
+              ${OPERATOR_NAMES.map(n=>`<option value="${escapeAttr(n)}" ${(data.operadorPassando||state.operatorName)===n?'selected':''}>${escapeHtml(n)}</option>`).join('')}
+            </select>
+            <label for="handoffTo">Operador que está recebendo o plantão</label>
+            <select id="handoffTo">
+              <option value="">Selecione o operador</option>
+              ${OPERATOR_NAMES.map(n=>`<option value="${escapeAttr(n)}" ${data.operadorRecebendo===n?'selected':''}>${escapeHtml(n)}</option>`).join('')}
+            </select>
+            <span class="handoff-error" id="handoffError" style="display:none;">Preencha os dois nomes para continuar.</span>
+          </div>
+          <div class="modal-actions" style="margin-top:14px;">
+            <button class="btn btn-finalize" id="handoffConfirmBtn" style="width:100%;justify-content:center;">Confirmar e finalizar plantão ✓</button>
+          </div>
+          <button class="modal-close" id="modalCloseBtn">Cancelar</button>
+        </div>
+      </div>
+    `;
+    document.getElementById('modalOverlay').addEventListener('click', e=>{
+      if(e.target.id==='modalOverlay') closeExportModal();
+    });
+    document.getElementById('modalCloseBtn').onclick = closeExportModal;
+    document.getElementById('handoffConfirmBtn').onclick = async ()=>{
+      const from = document.getElementById('handoffFrom').value.trim();
+      const to = document.getElementById('handoffTo').value.trim();
+      if(!from || !to){
+        document.getElementById('handoffError').style.display = 'block';
+        return;
+      }
+      closeExportModal();
+      await finalizePlantao(from, to);
+    };
   }
 
   function buildSummaryText(){
@@ -981,6 +1042,9 @@
     const lines = [];
     lines.push(`*LIVRO DE OCORRÊNCIA — APOIO24H*`);
     lines.push(`${fieldDateLabel()}${data.turno ? ' | Turno: ' + data.turno : ''}`);
+    if(data.finalizado && (data.operadorPassando || data.operadorRecebendo)){
+      lines.push(`Passagem de plantão: ${data.operadorPassando || '—'} → ${data.operadorRecebendo || '—'}`);
+    }
     lines.push('');
 
     const staffRows = data.staff.filter(r=> r.nome || r.horario || r.obs);
@@ -1065,6 +1129,15 @@
     doc.setFont('helvetica','normal');
     doc.text(`${fieldDateLabel()}${data.turno ? '  |  Turno: ' + data.turno : ''}`, marginX + 105, 56);
     y = 90;
+
+    if(data.finalizado && (data.operadorPassando || data.operadorRecebendo)){
+      doc.setFont('helvetica','italic');
+      doc.setFontSize(9);
+      doc.setTextColor(90,90,90);
+      doc.text(`Passagem de plantão: ${data.operadorPassando || '—'}  →  ${data.operadorRecebendo || '—'}`, marginX, y);
+      doc.setTextColor(20,20,20);
+      y += 20;
+    }
 
     function ensureSpace(needed){
       if(y + needed > 780){ doc.addPage(); y = 50; }
