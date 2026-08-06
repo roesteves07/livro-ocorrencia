@@ -303,6 +303,16 @@
     font-size:11.5px;
     font-weight:600;
   }
+  .finalized-badge.pending{
+    background:var(--bg);
+    color:var(--gray);
+    border-color:var(--border);
+    font-weight:500;
+  }
+  .badge-stack{display:flex;flex-direction:column;gap:6px;margin-top:6px;}
+  .print-header{margin-bottom:16px;}
+  .day-head-date{font-weight:400;color:var(--green-dark);}
+  .day-head h2{text-transform:uppercase;color:var(--green-dark);}
   .finalized-badge .reopen-btn{
     background:none;
     border:none;
@@ -527,7 +537,6 @@
 
   function defaultData(){
     return {
-      turno:'',
       staff:[],
       checklist: CHECKLIST_DEFAULT.map(r=>({...r})),
       pm: pmBlankRows(6),
@@ -538,8 +547,8 @@
       finalizado:false,
       finalizadoPor:'',
       finalizadoEm:'',
-      operadorPassando:'',
-      operadorRecebendo:''
+      handoffDiurno:{finalizado:false, finalizadoPor:'', finalizadoEm:'', operadorPassando:'', operadorRecebendo:''},
+      handoffNoturno:{finalizado:false, finalizadoPor:'', finalizadoEm:'', operadorPassando:'', operadorRecebendo:''}
     };
   }
 
@@ -642,7 +651,17 @@
     const key = dayKey(state.year, state.month, d);
     try{
       const parsed = await dbGetDay(key);
-      state.currentData = Object.assign(defaultData(), parsed || {});
+      const merged = Object.assign(defaultData(), parsed || {});
+      if(parsed && parsed.finalizado && !parsed.handoffDiurno && !parsed.handoffNoturno){
+        merged.handoffDiurno = {
+          finalizado:true,
+          finalizadoPor: parsed.finalizadoPor || '',
+          finalizadoEm: parsed.finalizadoEm || '',
+          operadorPassando: parsed.operadorPassando || '',
+          operadorRecebendo: parsed.operadorRecebendo || ''
+        };
+      }
+      state.currentData = merged;
     }catch(e){
       state.currentData = defaultData();
     }
@@ -660,8 +679,8 @@
     dayPanel.innerHTML = `
       <div class="day-head">
         <div>
-          <h2>${fieldDateLabel()}</h2>
-          ${data.finalizado ? `<div style="margin-top:6px;"><span class="finalized-badge">✓ Plantão finalizado${(data.operadorPassando || data.operadorRecebendo) ? ' — ' + escapeHtml(data.operadorPassando || '?') + ' → ' + escapeHtml(data.operadorRecebendo || '?') : ''}${data.finalizadoEm ? ' às ' + formatDT(data.finalizadoEm) : ''} <button class="reopen-btn" id="reopenBtn">reabrir edição</button></span></div>` : ''}
+          <h2>Livro de Ocorrência <span class="day-head-date">— ${fieldDateLabel()}</span></h2>
+          <div class="badge-stack">${handoffBadgeLine('handoffDiurno','Diurno','07:00', data.handoffDiurno)}${handoffBadgeLine('handoffNoturno','Noturno','19:00', data.handoffNoturno)}</div>
         </div>
         <div class="save-area">
           <span class="save-status" id="saveStatus">${data.atualizadoEm ? 'Última atualização: ' + formatDT(data.atualizadoEm) + (data.atualizadoPor ? ' por ' + escapeHtml(data.atualizadoPor) : '') : 'Ainda sem registro salvo'}</span>
@@ -674,20 +693,10 @@
       <div id="dayPrintArea">
       <div class="print-header">
         <img src="${document.querySelector('.topbar img').src}" alt="Apoio24h">
-        <div>
-          <div class="print-header-title">LIVRO DE OCORRÊNCIA</div>
-          <div class="print-header-sub">${fieldDateLabel()}${data.turno ? ' — Turno: ' + escapeHtml(data.turno) : ''}</div>
-        </div>
-      </div>
-      <div class="turno-select" id="turnoSelect">
-        ${['Diurno','Noturno'].map(t=>`
-          <label class="${data.turno===t?'active':''}" data-turno="${t}">
-            <input type="radio" name="turno" value="${t}" ${data.turno===t?'checked':''}> ${t}
-          </label>`).join('')}
       </div>
 
       <section class="block">
-        <h3>Operadores em plantão <button class="btn-add" id="addStaff">+ adicionar</button></h3>
+        <h3>Operadores de plantão <button class="btn-add" id="addStaff">+ adicionar</button></h3>
         <table><thead><tr><th style="width:26%">Nome</th><th style="width:22%">Entrada / Saída</th><th>Descrição / Observações</th><th class="col-rm"></th></tr></thead>
         <tbody id="staffBody"></tbody></table>
       </section>
@@ -725,26 +734,17 @@
     document.getElementById('saveBtn').onclick = ()=> saveDay(true);
     document.getElementById('exportBtn').onclick = ()=> openExportModal(false);
     document.getElementById('finalizeBtn').onclick = ()=> openHandoffModal();
-    const reopenBtn = document.getElementById('reopenBtn');
-    if(reopenBtn){
-      reopenBtn.onclick = ()=>{
-        data.finalizado = false;
+    document.querySelectorAll('.reopen-btn').forEach(btn=>{
+      btn.onclick = ()=>{
+        const turnoKey = btn.dataset.turno;
+        if(data[turnoKey]) data[turnoKey].finalizado = false;
         renderDayPanel();
         scheduleAutosave();
       };
-    }
+    });
     document.getElementById('addStaff').onclick = ()=>{ data.staff.push({nome:'',horario:'',obs:''}); renderStaffTable(); scheduleAutosave(); };
     document.getElementById('addChecklist').onclick = ()=>{ data.checklist.push({descricao:'',alteracao:'',obs:''}); renderChecklistTable(); scheduleAutosave(); };
     document.getElementById('addPm').onclick = ()=>{ data.pm.push({conta:'',cliente:'',hora:'',atendente:'',obs:''}); renderPmTable(); scheduleAutosave(); };
-
-    document.querySelectorAll('#turnoSelect label').forEach(lbl=>{
-      lbl.addEventListener('click', ()=>{
-        data.turno = lbl.dataset.turno;
-        document.querySelectorAll('#turnoSelect label').forEach(l=>l.classList.remove('active'));
-        lbl.classList.add('active');
-        scheduleAutosave();
-      });
-    });
   }
 
   function cellText(i, f, value, placeholder){
@@ -973,6 +973,13 @@
     });
   }
 
+  function handoffBadgeLine(turnoKey, label, hora, h){
+    if(h && h.finalizado){
+      return `<span class="finalized-badge">✓ Turno ${label} (${hora})${(h.operadorPassando || h.operadorRecebendo) ? ' — ' + escapeHtml(h.operadorPassando || '?') + ' → ' + escapeHtml(h.operadorRecebendo || '?') : ''}${h.finalizadoEm ? ' às ' + formatDT(h.finalizadoEm) : ''} <button class="reopen-btn" data-turno="${turnoKey}">reabrir edição</button></span>`;
+    }
+    return `<span class="finalized-badge pending">Turno ${label} (${hora}): plantão em aberto</span>`;
+  }
+
   function formatDT(iso){
     try{
       const d = new Date(iso);
@@ -980,14 +987,17 @@
     }catch(e){ return iso; }
   }
 
-  async function finalizePlantao(operadorPassando, operadorRecebendo){
+  async function finalizePlantao(turno, operadorPassando, operadorRecebendo){
     if(!state.selectedDay) return;
     const data = state.currentData;
-    data.finalizado = true;
-    data.finalizadoPor = state.operatorName || 'Operador';
-    data.finalizadoEm = new Date().toISOString();
-    data.operadorPassando = operadorPassando || '';
-    data.operadorRecebendo = operadorRecebendo || '';
+    const turnoKey = turno==='Noturno' ? 'handoffNoturno' : 'handoffDiurno';
+    data[turnoKey] = {
+      finalizado:true,
+      finalizadoPor: state.operatorName || 'Operador',
+      finalizadoEm: new Date().toISOString(),
+      operadorPassando: operadorPassando || '',
+      operadorRecebendo: operadorRecebendo || ''
+    };
     await saveDay(true);
     renderDayPanel();
     openExportModal(true);
@@ -996,21 +1006,29 @@
   function openHandoffModal(){
     const root = document.getElementById('modalRoot');
     const data = state.currentData;
+    const defaultTurno = !data.handoffDiurno.finalizado ? 'Diurno' : 'Noturno';
     root.innerHTML = `
       <div class="modal-overlay" id="modalOverlay">
         <div class="modal-box">
           <h3>Passagem de plantão</h3>
-          <div class="modal-sub">Informe quem está passando e quem está recebendo o plantão antes de finalizar.</div>
+          <div class="modal-sub">Selecione o turno e informe quem está passando e quem está recebendo antes de finalizar.</div>
           <div class="modal-form">
+            <label>Turno</label>
+            <div class="turno-select" id="handoffTurnoSelect">
+              ${[['Diurno','07:00'],['Noturno','19:00']].map(([t,h])=>`
+                <label class="${defaultTurno===t?'active':''}" data-turno="${t}">
+                  <input type="radio" name="handoffTurno" value="${t}" ${defaultTurno===t?'checked':''}> ${t} (${h})
+                </label>`).join('')}
+            </div>
             <label for="handoffFrom">Operador que está passando o plantão</label>
             <select id="handoffFrom">
               <option value="">Selecione o operador</option>
-              ${OPERATOR_NAMES.map(n=>`<option value="${escapeAttr(n)}" ${(data.operadorPassando||state.operatorName)===n?'selected':''}>${escapeHtml(n)}</option>`).join('')}
+              ${OPERATOR_NAMES.map(n=>`<option value="${escapeAttr(n)}" ${state.operatorName===n?'selected':''}>${escapeHtml(n)}</option>`).join('')}
             </select>
             <label for="handoffTo">Operador que está recebendo o plantão</label>
             <select id="handoffTo">
               <option value="">Selecione o operador</option>
-              ${OPERATOR_NAMES.map(n=>`<option value="${escapeAttr(n)}" ${data.operadorRecebendo===n?'selected':''}>${escapeHtml(n)}</option>`).join('')}
+              ${OPERATOR_NAMES.map(n=>`<option value="${escapeAttr(n)}">${escapeHtml(n)}</option>`).join('')}
             </select>
             <span class="handoff-error" id="handoffError" style="display:none;">Preencha os dois nomes para continuar.</span>
           </div>
@@ -1021,6 +1039,14 @@
         </div>
       </div>
     `;
+    let selectedTurno = defaultTurno;
+    document.querySelectorAll('#handoffTurnoSelect label').forEach(lbl=>{
+      lbl.addEventListener('click', ()=>{
+        selectedTurno = lbl.dataset.turno;
+        document.querySelectorAll('#handoffTurnoSelect label').forEach(l=>l.classList.remove('active'));
+        lbl.classList.add('active');
+      });
+    });
     document.getElementById('modalOverlay').addEventListener('click', e=>{
       if(e.target.id==='modalOverlay') closeExportModal();
     });
@@ -1033,7 +1059,7 @@
         return;
       }
       closeExportModal();
-      await finalizePlantao(from, to);
+      await finalizePlantao(selectedTurno, from, to);
     };
   }
 
@@ -1041,15 +1067,18 @@
     const data = state.currentData;
     const lines = [];
     lines.push(`*LIVRO DE OCORRÊNCIA — APOIO24H*`);
-    lines.push(`${fieldDateLabel()}${data.turno ? ' | Turno: ' + data.turno : ''}`);
-    if(data.finalizado && (data.operadorPassando || data.operadorRecebendo)){
-      lines.push(`Passagem de plantão: ${data.operadorPassando || '—'} → ${data.operadorRecebendo || '—'}`);
+    lines.push(fieldDateLabel());
+    if(data.handoffDiurno && data.handoffDiurno.finalizado){
+      lines.push(`Turno Diurno (07:00): ${data.handoffDiurno.operadorPassando || '—'} → ${data.handoffDiurno.operadorRecebendo || '—'}`);
+    }
+    if(data.handoffNoturno && data.handoffNoturno.finalizado){
+      lines.push(`Turno Noturno (19:00): ${data.handoffNoturno.operadorPassando || '—'} → ${data.handoffNoturno.operadorRecebendo || '—'}`);
     }
     lines.push('');
 
     const staffRows = data.staff.filter(r=> r.nome || r.horario || r.obs);
     if(staffRows.length){
-      lines.push('*Operadores em plantão:*');
+      lines.push('*Operadores de plantão:*');
       staffRows.forEach(r=> lines.push(`- ${r.nome || '(sem nome)'}${r.horario ? ' | ' + r.horario : ''}${r.obs ? ' — ' + r.obs : ''}`));
       lines.push('');
     }
@@ -1127,16 +1156,26 @@
     doc.text('Livro de Ocorrência', marginX + 105, 40);
     doc.setFontSize(10.5);
     doc.setFont('helvetica','normal');
-    doc.text(`${fieldDateLabel()}${data.turno ? '  |  Turno: ' + data.turno : ''}`, marginX + 105, 56);
+    doc.text(fieldDateLabel(), marginX + 105, 56);
     y = 90;
 
-    if(data.finalizado && (data.operadorPassando || data.operadorRecebendo)){
+    const handoffLines = [];
+    if(data.handoffDiurno && data.handoffDiurno.finalizado){
+      handoffLines.push(`Turno Diurno (07:00): ${data.handoffDiurno.operadorPassando || '—'}  →  ${data.handoffDiurno.operadorRecebendo || '—'}`);
+    }
+    if(data.handoffNoturno && data.handoffNoturno.finalizado){
+      handoffLines.push(`Turno Noturno (19:00): ${data.handoffNoturno.operadorPassando || '—'}  →  ${data.handoffNoturno.operadorRecebendo || '—'}`);
+    }
+    if(handoffLines.length){
       doc.setFont('helvetica','italic');
       doc.setFontSize(9);
       doc.setTextColor(90,90,90);
-      doc.text(`Passagem de plantão: ${data.operadorPassando || '—'}  →  ${data.operadorRecebendo || '—'}`, marginX, y);
+      handoffLines.forEach(line=>{
+        doc.text(line, marginX, y);
+        y += 14;
+      });
       doc.setTextColor(20,20,20);
-      y += 20;
+      y += 6;
     }
 
     function ensureSpace(needed){
@@ -1175,7 +1214,7 @@
       y = doc.lastAutoTable.finalY + 18;
     }
 
-    sectionTitle('OPERADORES EM PLANTÃO');
+    sectionTitle('OPERADORES DE PLANTÃO');
     table(['Nome','Entrada / Saída','Observações'], data.staff.map(r=>[r.nome||'',r.horario||'',r.obs||'']));
 
     sectionTitle('CHECK-LIST EQUIPAMENTOS');
