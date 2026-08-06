@@ -156,19 +156,6 @@
     color:var(--green-dark);
     line-height:1.5;
   }
-  .backup-box{
-    margin-top:12px;
-    padding:10px 12px;
-    border:1px solid var(--border);
-    border-radius:8px;
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:8px;
-    flex-wrap:wrap;
-  }
-  .backup-box-text{display:flex;flex-direction:column;font-size:11px;color:var(--gray);}
-  .backup-box-text strong{font-size:12px;color:var(--ink);}
   .day-panel .day-head{
     display:flex;
     align-items:center;
@@ -446,13 +433,6 @@
     </div>
     <div class="status-note">
       Este livro é compartilhado: todos os operadores precisam acessar o <strong>mesmo endereço do site</strong> para ver e editar os mesmos registros em tempo real. Clique num dia no calendário para abrir o livro daquela data.
-    </div>
-    <div class="backup-box">
-      <div class="backup-box-text">
-        <strong>Backup</strong>
-        <span id="backupStatus">verificando...</span>
-      </div>
-      <button class="btn-add" id="backupNowBtn">Baixar backup agora</button>
     </div>
   </div>
 
@@ -1132,8 +1112,16 @@
     table(['Conta','Cliente','Hora','Atendente','Observações'], data.pm.filter(r=>r.conta||r.cliente||r.hora||r.atendente||r.obs).map(r=>[r.conta||'',r.cliente||'',r.hora||'',r.atendente||'',r.obs||'']));
 
     function textBlock(title, text){
-      if(!text || !text.trim()) return;
       sectionTitle(title);
+      if(!text || !text.trim()){
+        doc.setFont('helvetica','italic');
+        doc.setFontSize(9);
+        doc.setTextColor(120,120,120);
+        doc.text('Nenhum registro informado.', marginX, y);
+        doc.setTextColor(20,20,20);
+        y += 20;
+        return;
+      }
       doc.setFont('helvetica','normal');
       doc.setFontSize(9.5);
       const lines = doc.splitTextToSize(text.trim(), 515);
@@ -1157,46 +1145,6 @@
     return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
   }
 
-  async function performBackup(){
-    const statusEl = document.getElementById('backupStatus');
-    try{
-      if(statusEl) statusEl.textContent = 'gerando backup...';
-      const bundle = await dbListAllDays();
-      const json = JSON.stringify(bundle, null, 2);
-      const blob = new Blob([json], {type:'application/json'});
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `Backup_Livro_Ocorrencia_${todayStr()}.json`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      try{ localStorage.setItem('backup-last-date', todayStr()); }catch(e){}
-      if(statusEl) statusEl.textContent = `último backup: hoje (${Object.keys(bundle).length} dias)`;
-    }catch(e){
-      console.error('Erro ao gerar backup', e);
-      if(statusEl) statusEl.textContent = 'erro ao gerar backup';
-    }
-  }
-
-  async function checkDailyBackup(){
-    const statusEl = document.getElementById('backupStatus');
-    let lastDate = null;
-    try{
-      lastDate = localStorage.getItem('backup-last-date');
-    }catch(e){
-      lastDate = null;
-    }
-    if(lastDate === todayStr()){
-      if(statusEl) statusEl.textContent = `último backup: hoje`;
-    }else{
-      await performBackup();
-    }
-  }
-
-  document.getElementById('backupNowBtn').addEventListener('click', performBackup);
-
   function escapeHtml(s){
     if(s===undefined || s===null) return '';
     return String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
@@ -1212,7 +1160,6 @@
   renderCalendar().then(()=>{
     selectDay(today.getDate());
   });
-  checkDailyBackup();
 })();
 </script>
 </body>
