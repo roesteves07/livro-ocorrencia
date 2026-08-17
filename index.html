@@ -1408,6 +1408,18 @@
     return out.replace(/\n{3,}/g,'\n\n').trim();
   }
 
+  function stripEmojiForPdf(text){
+    if(!text) return text;
+    return text
+      .replace(/[\u{1F000}-\u{1FFFF}]/gu, '')
+      .replace(/[\u{2600}-\u{27BF}]/gu, '')
+      .replace(/[\u{2190}-\u{21FF}]/gu, '')
+      .replace(/[\u{2B00}-\u{2BFF}]/gu, '')
+      .replace(/[\u{FE00}-\u{FE0F}]/gu, '')
+      .replace(/\u200D/g, '')
+      .replace(/[ \t]{2,}/g, ' ');
+  }
+
   function htmlToRuns(html){
     const container = document.createElement('div');
     container.innerHTML = html || '';
@@ -1415,7 +1427,8 @@
     function walk(node, style){
       node.childNodes.forEach(child=>{
         if(child.nodeType===3){
-          if(child.textContent) runs.push({text:child.textContent, bold:style.bold, italic:style.italic, underline:style.underline});
+          const cleaned = stripEmojiForPdf(child.textContent);
+          if(cleaned) runs.push({text:cleaned, bold:style.bold, italic:style.italic, underline:style.underline});
         }else if(child.nodeType===1){
           const tag = child.tagName.toLowerCase();
           if(tag==='br'){ runs.push({break:true}); return; }
