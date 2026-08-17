@@ -279,6 +279,66 @@
     resize:vertical;
     line-height:1.55;
   }
+  .rt-toolbar{display:flex;gap:6px;margin-bottom:8px;}
+  .rt-btn{
+    width:32px;height:30px;
+    border:1px solid var(--border);
+    border-radius:6px;
+    background:#fff;
+    cursor:pointer;
+    font-size:13px;
+    font-family:inherit;
+    display:flex;align-items:center;justify-content:center;
+    color:var(--ink);
+  }
+  .rt-btn:hover{background:var(--green-light);border-color:var(--green);}
+  .rt-btn.active{background:var(--green-light);border-color:var(--green);color:var(--green-dark);}
+  .rt-emoji-wrap{position:relative;}
+  .rt-emoji-panel{
+    display:none;
+    position:absolute;
+    top:36px;
+    left:0;
+    z-index:30;
+    width:236px;
+    max-height:190px;
+    overflow-y:auto;
+    background:#fff;
+    border:1px solid var(--border);
+    border-radius:8px;
+    box-shadow:0 6px 18px rgba(0,0,0,0.12);
+    padding:8px;
+    grid-template-columns:repeat(8,1fr);
+    gap:2px;
+  }
+  .rt-emoji-panel.open{display:grid;}
+  .rt-emoji-panel button{
+    border:none;
+    background:none;
+    font-size:17px;
+    line-height:1;
+    padding:4px;
+    border-radius:5px;
+    cursor:pointer;
+  }
+  .rt-emoji-panel button:hover{background:var(--green-light);}
+  .rt-editor{
+    width:100%;
+    min-height:180px;
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:10px 12px;
+    font-family:inherit;
+    font-size:13px;
+    line-height:1.55;
+    color:var(--ink);
+    outline:none;
+  }
+  .rt-editor:focus{border-color:var(--green);}
+  .rt-editor:empty:before{
+    content:attr(data-placeholder);
+    color:#9aa39c;
+  }
   .empty-state{
     text-align:center;
     color:var(--gray);
@@ -313,6 +373,25 @@
   .print-header{margin-bottom:16px;}
   .day-head-date{font-weight:400;color:var(--green-dark);}
   .day-head h2{text-transform:uppercase;color:var(--green-dark);}
+  .alert-block{
+    background:#eef7f0;
+    border:1.5px solid #1f6e33;
+    border-left:6px solid #1f6e33;
+    border-radius:8px;
+  }
+  .alert-block h3{
+    color:#1f6e33;
+    text-transform:uppercase;
+    letter-spacing:0.02em;
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  .alert-block .rt-editor{
+    border-color:#bfe0c8;
+    background:#fdfffe;
+  }
+  .alert-block .rt-editor:focus{border-color:#1f6e33;}
   .finalized-badge .reopen-btn{
     background:none;
     border:none;
@@ -376,6 +455,7 @@
     text-align:left;
   }
   .action-btn:hover{background:var(--green-light);border-color:var(--green);}
+  .action-btn:disabled{opacity:0.6;cursor:default;background:var(--bg);border-color:var(--border);}
   .action-btn .icon{font-size:18px;}
   .action-btn small{display:block;font-weight:400;color:var(--gray);font-size:11px;margin-top:1px;}
   .modal-close{
@@ -522,6 +602,18 @@
   const DOW = ['dom','seg','ter','qua','qui','sex','sáb'];
   const MONTHS = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
   const OPERATOR_NAMES = ['ALINE FACUNDO','BIANCA SANCHES','CAMILA MORAES','DAVI HING','GEOVANA MOURA','MARIA EDUARDA','SARA ADRIANE','THAIS DINIZ','VITORIA RODRIGUES'];
+  const EMOJI_LIST = [
+    '😀','😃','😄','😁','😆','😅','🙂','😊','😇','🙃',
+    '😉','😍','🥰','😘','😋','😛','🤪','🤨','🧐','😎',
+    '🥳','😐','😑','😴','🤔','🤫','🤐','😶','😬','🙄',
+    '😯','😮','😲','🥱','😪','😷','🤒','🤕','🤢','🤮',
+    '🥵','🥶','😳','😰','😥','😢','😭','😤','😠','😡',
+    '🤬','😨','😱','😩','😫','🥺','☹️','😞','😔','😟',
+    '👍','👎','👌','✌️','🤞','🤝','👏','🙌','🙏','💪',
+    '👋','✋','👆','👇','👈','👉','👊','✊','🤙','✍️',
+    '👀','👤','👥','🗣️','👶','🧒','🧑','👨','👩','🧓',
+    '👮','👷','👩‍⚕️','👨‍⚕️','👩‍💻','👨‍💻','🚨','🔒','✅','❌'
+  ];
   const HORARIOS = ['07H00 ÀS 19H00','19H00 ÀS 07H00','08H00 ÀS 20H00','07H00 ÀS 17H00'];
   const CHECKLIST_DEFAULT = [
     {descricao:'05 - Aparelhos Celulares / 03 - Carregadores', alteracao:'', obs:''},
@@ -537,9 +629,12 @@
 
   function defaultData(){
     return {
-      staff:[],
+      staffDiurno:[],
+      staffNoturno:[],
       checklist: CHECKLIST_DEFAULT.map(r=>({...r})),
       pm: pmBlankRows(6),
+      gateOne:'',
+      quedaImagens:[],
       diurno:'',
       noturno:'',
       atualizadoPor:'',
@@ -661,6 +756,9 @@
           operadorRecebendo: parsed.operadorRecebendo || ''
         };
       }
+      if(parsed && Array.isArray(parsed.staff) && !parsed.staffDiurno && !parsed.staffNoturno){
+        merged.staffDiurno = parsed.staff;
+      }
       state.currentData = merged;
     }catch(e){
       state.currentData = defaultData();
@@ -696,12 +794,6 @@
       </div>
 
       <section class="block">
-        <h3>Operadores de plantão <button class="btn-add" id="addStaff">+ adicionar</button></h3>
-        <table><thead><tr><th style="width:26%">Nome</th><th style="width:22%">Entrada / Saída</th><th>Descrição / Observações</th><th class="col-rm"></th></tr></thead>
-        <tbody id="staffBody"></tbody></table>
-      </section>
-
-      <section class="block">
         <h3>Check-list equipamentos <button class="btn-add" id="addChecklist">+ adicionar</button></h3>
         <table><thead><tr><th style="width:38%">Descrição</th><th style="width:12%">Alteração</th><th>Descrição / Observações</th><th class="col-rm"></th></tr></thead>
         <tbody id="checklistBody"></tbody></table>
@@ -713,24 +805,116 @@
         <tbody id="pmBody"></tbody></table>
       </section>
 
+      <section class="block alert-block">
+        <h3>⚠️ GateOne — Informações Importantes</h3>
+        <div class="rt-toolbar" data-target="gateOneText">
+          <button type="button" class="rt-btn" data-cmd="bold" title="Negrito"><b>N</b></button>
+          <button type="button" class="rt-btn" data-cmd="italic" title="Itálico"><i>I</i></button>
+          <button type="button" class="rt-btn" data-cmd="underline" title="Sublinhado"><u>S</u></button>
+          <div class="rt-emoji-wrap">
+            <button type="button" class="rt-btn rt-emoji-btn" title="Emoji">🙂</button>
+            <div class="rt-emoji-panel"></div>
+          </div>
+        </div>
+        <div class="rt-editor" id="gateOneText" contenteditable="true" data-placeholder="Avisos urgentes para toda a operação (ex: instabilidades, procedimentos temporários, alertas gerais)...">${richInitialHtml(data.gateOne)}</div>
+      </section>
+
+      <section class="block">
+        <h3>Queda de Imagens — Moked <button class="btn-add" id="addQueda">+ adicionar</button></h3>
+        <table><thead><tr><th style="width:14%">Projeto</th><th style="width:16%">Data da queda</th><th style="width:12%">Horário da queda</th><th style="width:16%">Data do retorno</th><th style="width:12%">Horário do retorno</th><th>Grupo responsável</th><th class="col-rm"></th></tr></thead>
+        <tbody id="quedaBody"></tbody></table>
+      </section>
+
+      <section class="block">
+        <h3>Operadores de plantão — Diurno <button class="btn-add" id="addStaffDiurno">+ adicionar</button></h3>
+        <table><thead><tr><th style="width:26%">Nome</th><th style="width:22%">Entrada / Saída</th><th>Descrição / Observações</th><th class="col-rm"></th></tr></thead>
+        <tbody id="staffDiurnoBody"></tbody></table>
+      </section>
+
       <section class="block">
         <h3>Ocorrências diversas — Diurno</h3>
-        <textarea id="diurnoText" placeholder="Descreva as ocorrências do turno diurno...">${escapeHtml(data.diurno)}</textarea>
+        <div class="rt-toolbar" data-target="diurnoText">
+          <button type="button" class="rt-btn" data-cmd="bold" title="Negrito"><b>N</b></button>
+          <button type="button" class="rt-btn" data-cmd="italic" title="Itálico"><i>I</i></button>
+          <button type="button" class="rt-btn" data-cmd="underline" title="Sublinhado"><u>S</u></button>
+          <div class="rt-emoji-wrap">
+            <button type="button" class="rt-btn rt-emoji-btn" title="Emoji">🙂</button>
+            <div class="rt-emoji-panel"></div>
+          </div>
+        </div>
+        <div class="rt-editor" id="diurnoText" contenteditable="true" data-placeholder="Descreva as ocorrências do turno diurno...">${richInitialHtml(data.diurno)}</div>
+      </section>
+
+      <section class="block">
+        <h3>Operadores de plantão — Noturno <button class="btn-add" id="addStaffNoturno">+ adicionar</button></h3>
+        <table><thead><tr><th style="width:26%">Nome</th><th style="width:22%">Entrada / Saída</th><th>Descrição / Observações</th><th class="col-rm"></th></tr></thead>
+        <tbody id="staffNoturnoBody"></tbody></table>
       </section>
 
       <section class="block">
         <h3>Ocorrências diversas — Noturno</h3>
-        <textarea id="noturnoText" placeholder="Descreva as ocorrências do turno noturno...">${escapeHtml(data.noturno)}</textarea>
+        <div class="rt-toolbar" data-target="noturnoText">
+          <button type="button" class="rt-btn" data-cmd="bold" title="Negrito"><b>N</b></button>
+          <button type="button" class="rt-btn" data-cmd="italic" title="Itálico"><i>I</i></button>
+          <button type="button" class="rt-btn" data-cmd="underline" title="Sublinhado"><u>S</u></button>
+          <div class="rt-emoji-wrap">
+            <button type="button" class="rt-btn rt-emoji-btn" title="Emoji">🙂</button>
+            <div class="rt-emoji-panel"></div>
+          </div>
+        </div>
+        <div class="rt-editor" id="noturnoText" contenteditable="true" data-placeholder="Descreva as ocorrências do turno noturno...">${richInitialHtml(data.noturno)}</div>
       </section>
       </div>
     `;
 
-    renderStaffTable();
+    renderStaffTable('staffDiurno','staffDiurnoBody');
+    renderStaffTable('staffNoturno','staffNoturnoBody');
     renderChecklistTable();
     renderPmTable();
+    renderQuedaTable();
 
-    document.getElementById('diurnoText').addEventListener('input', e=>{ data.diurno = e.target.value; scheduleAutosave(); });
-    document.getElementById('noturnoText').addEventListener('input', e=>{ data.noturno = e.target.value; scheduleAutosave(); });
+    document.getElementById('gateOneText').addEventListener('input', e=>{ data.gateOne = e.target.innerHTML; scheduleAutosave(); });
+    document.getElementById('diurnoText').addEventListener('input', e=>{ data.diurno = e.target.innerHTML; scheduleAutosave(); });
+    document.getElementById('noturnoText').addEventListener('input', e=>{ data.noturno = e.target.innerHTML; scheduleAutosave(); });
+    document.querySelectorAll('.rt-toolbar').forEach(toolbar=>{
+      const target = document.getElementById(toolbar.dataset.target);
+      toolbar.querySelectorAll('.rt-btn[data-cmd]').forEach(btn=>{
+        btn.addEventListener('mousedown', e=> e.preventDefault());
+        btn.addEventListener('click', ()=>{
+          target.focus();
+          document.execCommand(btn.dataset.cmd, false, null);
+          target.dispatchEvent(new Event('input', {bubbles:true}));
+        });
+      });
+
+      const emojiBtn = toolbar.querySelector('.rt-emoji-btn');
+      const emojiPanel = toolbar.querySelector('.rt-emoji-panel');
+      if(emojiBtn && emojiPanel){
+        emojiPanel.innerHTML = EMOJI_LIST.map(e=>`<button type="button">${e}</button>`).join('');
+        emojiBtn.addEventListener('mousedown', e=> e.preventDefault());
+        emojiBtn.addEventListener('click', ()=>{
+          document.querySelectorAll('.rt-emoji-panel.open').forEach(p=>{ if(p!==emojiPanel) p.classList.remove('open'); });
+          emojiPanel.classList.toggle('open');
+        });
+        emojiPanel.querySelectorAll('button').forEach(eBtn=>{
+          eBtn.addEventListener('mousedown', e=> e.preventDefault());
+          eBtn.addEventListener('click', ()=>{
+            target.focus();
+            document.execCommand('insertText', false, eBtn.textContent);
+            target.dispatchEvent(new Event('input', {bubbles:true}));
+            emojiPanel.classList.remove('open');
+          });
+        });
+      }
+    });
+    if(!window.__emojiPanelCloseBound){
+      window.__emojiPanelCloseBound = true;
+      document.addEventListener('click', e=>{
+        if(!e.target.closest('.rt-emoji-wrap')){
+          document.querySelectorAll('.rt-emoji-panel.open').forEach(p=> p.classList.remove('open'));
+        }
+      });
+    }
     document.getElementById('saveBtn').onclick = ()=> saveDay(true);
     document.getElementById('exportBtn').onclick = ()=> openExportModal(false);
     document.getElementById('finalizeBtn').onclick = ()=> openHandoffModal();
@@ -742,9 +926,11 @@
         scheduleAutosave();
       };
     });
-    document.getElementById('addStaff').onclick = ()=>{ data.staff.push({nome:'',horario:'',obs:''}); renderStaffTable(); scheduleAutosave(); };
+    document.getElementById('addStaffDiurno').onclick = ()=>{ data.staffDiurno.push({nome:'',horario:'',obs:''}); renderStaffTable('staffDiurno','staffDiurnoBody'); scheduleAutosave(); };
+    document.getElementById('addStaffNoturno').onclick = ()=>{ data.staffNoturno.push({nome:'',horario:'',obs:''}); renderStaffTable('staffNoturno','staffNoturnoBody'); scheduleAutosave(); };
     document.getElementById('addChecklist').onclick = ()=>{ data.checklist.push({descricao:'',alteracao:'',obs:''}); renderChecklistTable(); scheduleAutosave(); };
     document.getElementById('addPm').onclick = ()=>{ data.pm.push({conta:'',cliente:'',hora:'',atendente:'',obs:''}); renderPmTable(); scheduleAutosave(); };
+    document.getElementById('addQueda').onclick = ()=>{ data.quedaImagens.push({projeto:'',dataQueda:'',horaQueda:'',dataRetorno:'',horaRetorno:'',grupo:''}); renderQuedaTable(); scheduleAutosave(); };
   }
 
   function cellText(i, f, value, placeholder){
@@ -798,10 +984,11 @@
     return html;
   }
 
-  function renderStaffTable(){
-    const body = document.getElementById('staffBody');
+  function renderStaffTable(fieldKey, bodyId){
+    const body = document.getElementById(bodyId);
     const data = state.currentData;
-    body.innerHTML = data.staff.map((row,i)=>`
+    const rows = data[fieldKey];
+    body.innerHTML = rows.map((row,i)=>`
       <tr>
         <td>${nameSelect(i, row)}</td>
         <td>${horarioSelect(i, row)}</td>
@@ -809,18 +996,18 @@
         <td class="col-rm"><button class="btn-remove" data-i="${i}">✕</button></td>
       </tr>`).join('') || `<tr><td colspan="4" style="color:var(--gray);text-align:center;">Nenhum operador adicionado ainda.</td></tr>`;
 
-    bindCellText(body, data.staff);
+    bindCellText(body, rows);
     body.querySelectorAll('select.name-select').forEach(sel=>{
       sel.addEventListener('change', e=>{
         const i = +e.target.dataset.i;
         if(e.target.value === '__custom__'){
-          data.staff[i].nome = '';
-          data.staff[i].nomeCustom = true;
+          rows[i].nome = '';
+          rows[i].nomeCustom = true;
         }else{
-          data.staff[i].nome = e.target.value;
-          data.staff[i].nomeCustom = false;
+          rows[i].nome = e.target.value;
+          rows[i].nomeCustom = false;
         }
-        renderStaffTable();
+        renderStaffTable(fieldKey, bodyId);
         scheduleAutosave();
         if(e.target.value === '__custom__'){
           const inp = document.querySelector(`.custom-name-input[data-i="${i}"]`);
@@ -832,7 +1019,7 @@
       inp.addEventListener('input', e=>{
         const i = +e.target.dataset.i;
         e.target.value = e.target.value.toUpperCase();
-        data.staff[i].nome = e.target.value;
+        rows[i].nome = e.target.value;
         scheduleAutosave();
       });
     });
@@ -840,13 +1027,13 @@
       sel.addEventListener('change', e=>{
         const i = +e.target.dataset.i;
         if(e.target.value === '__custom__'){
-          data.staff[i].horario = '';
-          data.staff[i].horarioCustom = true;
+          rows[i].horario = '';
+          rows[i].horarioCustom = true;
         }else{
-          data.staff[i].horario = e.target.value;
-          data.staff[i].horarioCustom = false;
+          rows[i].horario = e.target.value;
+          rows[i].horarioCustom = false;
         }
-        renderStaffTable();
+        renderStaffTable(fieldKey, bodyId);
         scheduleAutosave();
         if(e.target.value === '__custom__'){
           const inp = document.querySelector(`.custom-horario-input[data-i="${i}"]`);
@@ -857,14 +1044,14 @@
     body.querySelectorAll('.custom-horario-input').forEach(inp=>{
       inp.addEventListener('input', e=>{
         const i = +e.target.dataset.i;
-        data.staff[i].horario = e.target.value;
+        rows[i].horario = e.target.value;
         scheduleAutosave();
       });
     });
     body.querySelectorAll('.btn-remove').forEach(btn=>{
       btn.addEventListener('click', e=>{
-        data.staff.splice(+e.target.dataset.i,1);
-        renderStaffTable();
+        rows.splice(+e.target.dataset.i,1);
+        renderStaffTable(fieldKey, bodyId);
         scheduleAutosave();
       });
     });
@@ -927,6 +1114,30 @@
     });
   }
 
+  function renderQuedaTable(){
+    const body = document.getElementById('quedaBody');
+    const data = state.currentData;
+    body.innerHTML = data.quedaImagens.map((row,i)=>`
+      <tr>
+        <td>${cellText(i,'projeto',row.projeto)}</td>
+        <td>${cellText(i,'dataQueda',row.dataQueda,'DD/MM')}</td>
+        <td>${cellText(i,'horaQueda',row.horaQueda,'HH:MM')}</td>
+        <td>${cellText(i,'dataRetorno',row.dataRetorno,'DD/MM')}</td>
+        <td>${cellText(i,'horaRetorno',row.horaRetorno,'HH:MM')}</td>
+        <td>${cellText(i,'grupo',row.grupo)}</td>
+        <td class="col-rm"><button class="btn-remove" data-i="${i}">✕</button></td>
+      </tr>`).join('') || `<tr><td colspan="7" style="color:var(--gray);text-align:center;">Nenhuma queda de imagens registrada.</td></tr>`;
+
+    bindCellText(body, data.quedaImagens);
+    body.querySelectorAll('.btn-remove').forEach(btn=>{
+      btn.addEventListener('click', e=>{
+        data.quedaImagens.splice(+e.target.dataset.i,1);
+        renderQuedaTable();
+        scheduleAutosave();
+      });
+    });
+  }
+
   function scheduleAutosave(){
     const statusEl = document.getElementById('saveStatus');
     if(statusEl) statusEl.textContent = 'Alterações não salvas...';
@@ -975,7 +1186,7 @@
 
   function handoffBadgeLine(turnoKey, label, hora, h){
     if(h && h.finalizado){
-      return `<span class="finalized-badge">✓ Turno ${label} (${hora})${(h.operadorPassando || h.operadorRecebendo) ? ' — ' + escapeHtml(h.operadorPassando || '?') + ' → ' + escapeHtml(h.operadorRecebendo || '?') : ''}${h.finalizadoEm ? ' às ' + formatDT(h.finalizadoEm) : ''} <button class="reopen-btn" data-turno="${turnoKey}">reabrir edição</button></span>`;
+      return `<span class="finalized-badge">✓ Turno ${label} (${hora})${(h.operadorPassando || h.operadorRecebendo) ? ' — ' + escapeHtml(h.operadorPassando || '?') + ' -> ' + escapeHtml(h.operadorRecebendo || '?') : ''}${h.finalizadoEm ? ' às ' + formatDT(h.finalizadoEm) : ''} <button class="reopen-btn" data-turno="${turnoKey}">reabrir edição</button></span>`;
     }
     return `<span class="finalized-badge pending">Turno ${label} (${hora}): plantão em aberto</span>`;
   }
@@ -1069,17 +1280,16 @@
     lines.push(`*LIVRO DE OCORRÊNCIA — APOIO24H*`);
     lines.push(fieldDateLabel());
     if(data.handoffDiurno && data.handoffDiurno.finalizado){
-      lines.push(`Turno Diurno (07:00): ${data.handoffDiurno.operadorPassando || '—'} → ${data.handoffDiurno.operadorRecebendo || '—'}`);
+      lines.push(`Turno Diurno (07:00): ${data.handoffDiurno.operadorPassando || '—'} -> ${data.handoffDiurno.operadorRecebendo || '—'}`);
     }
     if(data.handoffNoturno && data.handoffNoturno.finalizado){
-      lines.push(`Turno Noturno (19:00): ${data.handoffNoturno.operadorPassando || '—'} → ${data.handoffNoturno.operadorRecebendo || '—'}`);
+      lines.push(`Turno Noturno (19:00): ${data.handoffNoturno.operadorPassando || '—'} -> ${data.handoffNoturno.operadorRecebendo || '—'}`);
     }
     lines.push('');
 
-    const staffRows = data.staff.filter(r=> r.nome || r.horario || r.obs);
-    if(staffRows.length){
-      lines.push('*Operadores de plantão:*');
-      staffRows.forEach(r=> lines.push(`- ${r.nome || '(sem nome)'}${r.horario ? ' | ' + r.horario : ''}${r.obs ? ' — ' + r.obs : ''}`));
+    if(!richIsEmpty(looksLikeHtml(data.gateOne) ? data.gateOne : plainTextToHtml(data.gateOne))){
+      lines.push('🔶 *GATEONE — INFORMAÇÕES IMPORTANTES* 🔶');
+      lines.push(htmlToPlainFormatted(looksLikeHtml(data.gateOne) ? data.gateOne : plainTextToHtml(data.gateOne)));
       lines.push('');
     }
 
@@ -1097,14 +1307,34 @@
       lines.push('');
     }
 
-    if(data.diurno && data.diurno.trim()){
-      lines.push('*Ocorrências — Diurno:*');
-      lines.push(data.diurno.trim());
+    const quedaRows = data.quedaImagens.filter(r=> r.projeto || r.dataQueda || r.horaQueda || r.dataRetorno || r.horaRetorno || r.grupo);
+    if(quedaRows.length){
+      lines.push('*Queda de Imagens — Moked:*');
+      quedaRows.forEach(r=> lines.push(`- ${r.projeto || '(sem projeto)'} — Caiu: ${r.dataQueda || '—'} ${r.horaQueda || ''} | Retornou: ${r.dataRetorno || '—'} ${r.horaRetorno || ''} | Grupo: ${r.grupo || '—'}`));
       lines.push('');
     }
-    if(data.noturno && data.noturno.trim()){
+
+    const staffDiurnoRows = data.staffDiurno.filter(r=> r.nome || r.horario || r.obs);
+    if(staffDiurnoRows.length){
+      lines.push('*Operadores de plantão — Diurno:*');
+      staffDiurnoRows.forEach(r=> lines.push(`- ${r.nome || '(sem nome)'}${r.horario ? ' | ' + r.horario : ''}${r.obs ? ' — ' + r.obs : ''}`));
+      lines.push('');
+    }
+    if(!richIsEmpty(looksLikeHtml(data.diurno) ? data.diurno : plainTextToHtml(data.diurno))){
+      lines.push('*Ocorrências — Diurno:*');
+      lines.push(htmlToPlainFormatted(looksLikeHtml(data.diurno) ? data.diurno : plainTextToHtml(data.diurno)));
+      lines.push('');
+    }
+
+    const staffNoturnoRows = data.staffNoturno.filter(r=> r.nome || r.horario || r.obs);
+    if(staffNoturnoRows.length){
+      lines.push('*Operadores de plantão — Noturno:*');
+      staffNoturnoRows.forEach(r=> lines.push(`- ${r.nome || '(sem nome)'}${r.horario ? ' | ' + r.horario : ''}${r.obs ? ' — ' + r.obs : ''}`));
+      lines.push('');
+    }
+    if(!richIsEmpty(looksLikeHtml(data.noturno) ? data.noturno : plainTextToHtml(data.noturno))){
       lines.push('*Ocorrências — Noturno:*');
-      lines.push(data.noturno.trim());
+      lines.push(htmlToPlainFormatted(looksLikeHtml(data.noturno) ? data.noturno : plainTextToHtml(data.noturno)));
       lines.push('');
     }
 
@@ -1121,6 +1351,7 @@
           <div class="modal-sub">Escolha como deseja compartilhar o livro de ${fieldDateLabel()}.</div>
           <div class="modal-actions">
             <button class="action-btn" id="pdfBtn"><span class="icon">📄</span><span>Baixar em PDF<small>Gera um arquivo PDF completo deste dia</small></span></button>
+            <button class="action-btn" id="whatsappBtn"><span class="icon">💬</span><span>Enviar por WhatsApp<small>Gera o PDF e abre o compartilhamento</small></span></button>
             <button class="action-btn" id="printModalBtn"><span class="icon">🖨️</span><span>Imprimir<small>Abre a janela de impressão do navegador</small></span></button>
           </div>
           <button class="modal-close" id="modalCloseBtn">Fechar</button>
@@ -1132,6 +1363,7 @@
     });
     document.getElementById('modalCloseBtn').onclick = closeExportModal;
     document.getElementById('pdfBtn').onclick = ()=> downloadPDF();
+    document.getElementById('whatsappBtn').onclick = ()=> sharePDFWhatsApp();
     document.getElementById('printModalBtn').onclick = ()=>{ closeExportModal(); setTimeout(()=>window.print(), 150); };
   }
 
@@ -1139,7 +1371,109 @@
     document.getElementById('modalRoot').innerHTML = '';
   }
 
-  async function downloadPDF(){
+  function richIsEmpty(html){
+    if(!html) return true;
+    const div = document.createElement('div');
+    div.innerHTML = html;
+    return !div.textContent || !div.textContent.trim();
+  }
+
+  function htmlToPlainFormatted(html){
+    const container = document.createElement('div');
+    container.innerHTML = html || '';
+    let out = '';
+    function wrapRun(text, style){
+      let t = text;
+      if(style.bold) t = `*${t}*`;
+      if(style.italic) t = `_${t}_`;
+      return t;
+    }
+    function walk(node, style){
+      node.childNodes.forEach(child=>{
+        if(child.nodeType===3){
+          if(child.textContent) out += wrapRun(child.textContent, style);
+        }else if(child.nodeType===1){
+          const tag = child.tagName.toLowerCase();
+          if(tag==='br'){ out += '\n'; return; }
+          const newStyle = {...style};
+          if(tag==='b'||tag==='strong') newStyle.bold = true;
+          if(tag==='i'||tag==='em') newStyle.italic = true;
+          const isBlock = (tag==='div'||tag==='p');
+          walk(child, newStyle);
+          if(isBlock) out += '\n';
+        }
+      });
+    }
+    walk(container, {bold:false, italic:false});
+    return out.replace(/\n{3,}/g,'\n\n').trim();
+  }
+
+  function htmlToRuns(html){
+    const container = document.createElement('div');
+    container.innerHTML = html || '';
+    const runs = [];
+    function walk(node, style){
+      node.childNodes.forEach(child=>{
+        if(child.nodeType===3){
+          if(child.textContent) runs.push({text:child.textContent, bold:style.bold, italic:style.italic, underline:style.underline});
+        }else if(child.nodeType===1){
+          const tag = child.tagName.toLowerCase();
+          if(tag==='br'){ runs.push({break:true}); return; }
+          const newStyle = {...style};
+          if(tag==='b'||tag==='strong') newStyle.bold = true;
+          if(tag==='i'||tag==='em') newStyle.italic = true;
+          if(tag==='u') newStyle.underline = true;
+          const isBlock = (tag==='div'||tag==='p');
+          if(isBlock && runs.length && !runs[runs.length-1].break) runs.push({break:true});
+          walk(child, newStyle);
+          if(isBlock) runs.push({break:true});
+        }
+      });
+    }
+    walk(container, {bold:false, italic:false, underline:false});
+    while(runs.length && runs[runs.length-1].break) runs.pop();
+    return runs;
+  }
+
+  function drawRichText(doc, runs, x, y, maxWidth, lineHeight, fontSize){
+    let curX = x;
+    let curY = y;
+    function setStyle(bold, italic){
+      let style = 'normal';
+      if(bold && italic) style = 'bolditalic';
+      else if(bold) style = 'bold';
+      else if(italic) style = 'italic';
+      doc.setFont('helvetica', style);
+      doc.setFontSize(fontSize);
+    }
+    function newLine(){
+      curY += lineHeight;
+      curX = x;
+      if(curY > 780){ doc.addPage(); curY = 50; }
+    }
+    runs.forEach(run=>{
+      if(run.break){ newLine(); return; }
+      const tokens = run.text.split(/(\s+)/).filter(t=>t!=='');
+      tokens.forEach(tok=>{
+        setStyle(run.bold, run.italic);
+        const isSpace = /^\s+$/.test(tok);
+        const w = doc.getTextWidth(tok);
+        if(!isSpace && curX + w > x + maxWidth) newLine();
+        if(!isSpace){
+          doc.text(tok, curX, curY);
+          if(run.underline){
+            doc.setLineWidth(0.5);
+            doc.line(curX, curY + 2, curX + w, curY + 2);
+          }
+        }
+        curX += w;
+      });
+    });
+    doc.setFont('helvetica','normal');
+    return curY + lineHeight;
+  }
+
+  async function buildPDFDoc(){
     const { jsPDF } = window.jspdf;
     const data = state.currentData;
     const doc = new jsPDF('p','pt','a4');
@@ -1161,10 +1495,10 @@
 
     const handoffLines = [];
     if(data.handoffDiurno && data.handoffDiurno.finalizado){
-      handoffLines.push(`Turno Diurno (07:00): ${data.handoffDiurno.operadorPassando || '—'}  →  ${data.handoffDiurno.operadorRecebendo || '—'}`);
+      handoffLines.push(`Turno Diurno (07:00): ${data.handoffDiurno.operadorPassando || '—'}  ->  ${data.handoffDiurno.operadorRecebendo || '—'}`);
     }
     if(data.handoffNoturno && data.handoffNoturno.finalizado){
-      handoffLines.push(`Turno Noturno (19:00): ${data.handoffNoturno.operadorPassando || '—'}  →  ${data.handoffNoturno.operadorRecebendo || '—'}`);
+      handoffLines.push(`Turno Noturno (19:00): ${data.handoffNoturno.operadorPassando || '—'}  ->  ${data.handoffNoturno.operadorRecebendo || '—'}`);
     }
     if(handoffLines.length){
       doc.setFont('helvetica','italic');
@@ -1214,18 +1548,57 @@
       y = doc.lastAutoTable.finalY + 18;
     }
 
-    sectionTitle('OPERADORES DE PLANTÃO');
-    table(['Nome','Entrada / Saída','Observações'], data.staff.map(r=>[r.nome||'',r.horario||'',r.obs||'']));
-
     sectionTitle('CHECK-LIST EQUIPAMENTOS');
     table(['Descrição','Alteração','Observações'], data.checklist.map(r=>[r.descricao||'',r.alteracao||'',r.obs||'']));
 
     sectionTitle('ACIONAMENTO DA POLÍCIA MILITAR');
     table(['Conta','Cliente','Hora','Atendente','Observações'], data.pm.filter(r=>r.conta||r.cliente||r.hora||r.atendente||r.obs).map(r=>[r.conta||'',r.cliente||'',r.hora||'',r.atendente||'',r.obs||'']));
 
+    if(data.gateOne && !richIsEmpty(looksLikeHtml(data.gateOne) ? data.gateOne : plainTextToHtml(data.gateOne))){
+      const gateHtml = looksLikeHtml(data.gateOne) ? data.gateOne : plainTextToHtml(data.gateOne);
+      const gateRuns = htmlToRuns(gateHtml);
+      const padding = 10;
+      const titleH = 16;
+      const lineH = 13;
+      // pré-calcula quantas linhas o texto vai ocupar, para desenhar a caixa do tamanho certo
+      const measureDoc = doc;
+      let lineCount = 1;
+      let curW = 0;
+      const maxW = 495;
+      measureDoc.setFontSize(9.5);
+      gateRuns.forEach(run=>{
+        if(run.break){ lineCount++; curW = 0; return; }
+        run.text.split(/(\s+)/).filter(t=>t!=='').forEach(tok=>{
+          measureDoc.setFont('helvetica', run.bold && run.italic ? 'bolditalic' : run.bold ? 'bold' : run.italic ? 'italic' : 'normal');
+          const w = measureDoc.getTextWidth(tok);
+          if(!/^\s+$/.test(tok) && curW + w > maxW){ lineCount++; curW = 0; }
+          curW += w;
+        });
+      });
+      const boxH = padding*2 + titleH + lineCount*lineH;
+      ensureSpace(boxH + 16);
+      doc.setFillColor(238,247,240);
+      doc.setDrawColor(31,110,51);
+      doc.setLineWidth(1);
+      doc.roundedRect(marginX - 2, y - 2, 519, boxH, 4, 4, 'FD');
+      doc.setFillColor(31,110,51);
+      doc.rect(marginX - 2, y - 2, 4, boxH, 'F');
+      doc.setFont('helvetica','bold');
+      doc.setFontSize(10.5);
+      doc.setTextColor(31,110,51);
+      doc.text('GATEONE — INFORMAÇÕES IMPORTANTES', marginX + padding, y + padding + 4);
+      doc.setTextColor(20,20,20);
+      drawRichText(doc, gateRuns, marginX + padding, y + padding + titleH, maxW, lineH, 9.5);
+      y += boxH + 16;
+    }
+
+    sectionTitle('QUEDA DE IMAGENS — MOKED');
+    table(['Projeto','Data da queda','Horário da queda','Data do retorno','Horário do retorno','Grupo responsável'], data.quedaImagens.filter(r=>r.projeto||r.dataQueda||r.horaQueda||r.dataRetorno||r.horaRetorno||r.grupo).map(r=>[r.projeto||'',r.dataQueda||'',r.horaQueda||'',r.dataRetorno||'',r.horaRetorno||'',r.grupo||'']));
+
     function textBlock(title, text){
       sectionTitle(title);
-      if(!text || !text.trim()){
+      const html = looksLikeHtml(text) ? text : plainTextToHtml(text);
+      if(richIsEmpty(html)){
         doc.setFont('helvetica','italic');
         doc.setFontSize(9);
         doc.setTextColor(120,120,120);
@@ -1234,22 +1607,54 @@
         y += 20;
         return;
       }
-      doc.setFont('helvetica','normal');
-      doc.setFontSize(9.5);
-      const lines = doc.splitTextToSize(text.trim(), 515);
-      lines.forEach(line=>{
-        ensureSpace(14);
-        doc.text(line, marginX, y);
-        y += 13;
-      });
+      const runs = htmlToRuns(html);
+      y = drawRichText(doc, runs, marginX, y, 515, 13, 9.5);
       y += 10;
     }
 
+    sectionTitle('OPERADORES DE PLANTÃO — DIURNO');
+    table(['Nome','Entrada / Saída','Observações'], data.staffDiurno.map(r=>[r.nome||'',r.horario||'',r.obs||'']));
     textBlock('OCORRÊNCIAS DIVERSAS — DIURNO', data.diurno);
+
+    sectionTitle('OPERADORES DE PLANTÃO — NOTURNO');
+    table(['Nome','Entrada / Saída','Observações'], data.staffNoturno.map(r=>[r.nome||'',r.horario||'',r.obs||'']));
     textBlock('OCORRÊNCIAS DIVERSAS — NOTURNO', data.noturno);
 
+
     const fname = `Livro_Ocorrencia_${pad(state.selectedDay)}-${pad(state.month+1)}-${state.year}.pdf`;
+    return { doc, fname };
+  }
+
+  async function downloadPDF(){
+    const { doc, fname } = await buildPDFDoc();
     doc.save(fname);
+  }
+
+  async function sharePDFWhatsApp(){
+    const btn = document.getElementById('whatsappBtn');
+    const originalHTML = btn ? btn.innerHTML : '';
+    if(btn){ btn.disabled = true; btn.innerHTML = '<span class="icon">⏳</span><span>Preparando...</span>'; }
+    try{
+      const { doc, fname } = await buildPDFDoc();
+      const blob = doc.output('blob');
+      const file = new File([blob], fname, {type:'application/pdf'});
+      const summary = buildSummaryText();
+
+      if(navigator.canShare && navigator.canShare({files:[file]})){
+        await navigator.share({files:[file], title:'Livro de Ocorrência', text: summary});
+      }else{
+        doc.save(fname);
+        window.open(`https://wa.me/?text=${encodeURIComponent(summary)}`, '_blank');
+        alert('O PDF foi baixado. Este navegador não permite anexar o arquivo automaticamente — selecione-o manualmente na conversa do WhatsApp que abriu.');
+      }
+    }catch(e){
+      if(e && e.name !== 'AbortError'){
+        console.error('Erro ao compartilhar PDF pelo WhatsApp', e);
+        alert('Não foi possível compartilhar pelo WhatsApp. Tente baixar o PDF e enviar manualmente.');
+      }
+    }finally{
+      if(btn){ btn.disabled = false; btn.innerHTML = originalHTML; }
+    }
   }
 
   function todayStr(){
@@ -1264,6 +1669,17 @@
   function escapeAttr(s){
     if(s===undefined || s===null) return '';
     return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  }
+
+  function looksLikeHtml(s){
+    return !!s && /<[a-z][\s\S]*>/i.test(s);
+  }
+  function plainTextToHtml(s){
+    return escapeHtml(s || '').replace(/\n/g, '<br>');
+  }
+  function richInitialHtml(s){
+    if(!s) return '';
+    return looksLikeHtml(s) ? s : plainTextToHtml(s);
   }
 
   // init
