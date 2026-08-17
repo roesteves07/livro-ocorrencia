@@ -392,6 +392,34 @@
     background:#fdfffe;
   }
   .alert-block .rt-editor:focus{border-color:#1f6e33;}
+  .queda-status-alert{
+    display:inline-block;
+    background:#fdecea;
+    color:#a92e21;
+    border:1px solid #f0b4ab;
+    padding:4px 8px;
+    border-radius:6px;
+    font-size:11px;
+    font-weight:700;
+    white-space:nowrap;
+  }
+  .queda-status-ok{
+    display:inline-block;
+    background:#e8f6ec;
+    color:#1f6e33;
+    border:1px solid #b7e0c3;
+    padding:4px 8px;
+    border-radius:6px;
+    font-size:11px;
+    font-weight:700;
+    white-space:nowrap;
+  }
+  .queda-status-neutral{
+    display:inline-block;
+    color:var(--gray);
+    font-size:11px;
+    white-space:nowrap;
+  }
   .finalized-badge .reopen-btn{
     background:none;
     border:none;
@@ -821,7 +849,7 @@
 
       <section class="block">
         <h3>Queda de Imagens — Moked <button class="btn-add" id="addQueda">+ adicionar</button></h3>
-        <table><thead><tr><th style="width:14%">Projeto</th><th style="width:16%">Data da queda</th><th style="width:12%">Horário da queda</th><th style="width:16%">Data do retorno</th><th style="width:12%">Horário do retorno</th><th>Grupo responsável</th><th class="col-rm"></th></tr></thead>
+        <table><thead><tr><th style="width:12%">Projeto</th><th style="width:14%">Data da queda</th><th style="width:10%">Horário da queda</th><th style="width:14%">Data do retorno</th><th style="width:10%">Horário do retorno</th><th style="width:14%">Grupo responsável</th><th style="width:14%">Status</th><th class="col-rm"></th></tr></thead>
         <tbody id="quedaBody"></tbody></table>
       </section>
 
@@ -1114,6 +1142,49 @@
     });
   }
 
+  function parseQuedaDateTime(dataStr, horaStr, fallbackYear){
+    if(!dataStr || !dataStr.trim()) return null;
+    const parts = dataStr.trim().split('/');
+    if(parts.length < 2) return null;
+    const day = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10);
+    let year = fallbackYear;
+    if(parts[2]){
+      const p2 = parseInt(parts[2], 10);
+      year = parts[2].length <= 2 ? 2000 + p2 : p2;
+    }
+    if(isNaN(day) || isNaN(month) || isNaN(year)) return null;
+    let hour = 0, min = 0;
+    if(horaStr && horaStr.trim()){
+      const hParts = horaStr.trim().replace('h', ':').split(':');
+      hour = parseInt(hParts[0], 10) || 0;
+      min = parseInt(hParts[1], 10) || 0;
+    }
+    const dt = new Date(year, month - 1, day, hour, min);
+    return isNaN(dt.getTime()) ? null : dt;
+  }
+
+  function quedaStatus(row){
+    if(row.dataRetorno && row.dataRetorno.trim()){
+      return { type:'ok', label:'Imagens conectadas' };
+    }
+    const quedaDt = parseQuedaDateTime(row.dataQueda, row.horaQueda, state.year);
+    if(!quedaDt) return null;
+    const diffMs = Date.now() - quedaDt.getTime();
+    if(diffMs < 0) return null;
+    const diffDays = Math.floor(diffMs / 86400000);
+    const diffHours = Math.floor((diffMs % 86400000) / 3600000);
+    const label = diffDays > 0 ? `${diffDays}d ${diffHours}h sem imagem` : `${diffHours}h sem imagem`;
+    return { type: (diffMs / 86400000) >= 5 ? 'alert' : 'neutral', label };
+  }
+
+  function quedaStatusHtml(row){
+    const s = quedaStatus(row);
+    if(!s) return '';
+    const cls = s.type==='ok' ? 'queda-status-ok' : s.type==='alert' ? 'queda-status-alert' : 'queda-status-neutral';
+    return `<span class="${cls}">${escapeHtml(s.label)}</span>`;
+  }
+
   function renderQuedaTable(){
     const body = document.getElementById('quedaBody');
     const data = state.currentData;
@@ -1125,10 +1196,18 @@
         <td>${cellText(i,'dataRetorno',row.dataRetorno,'DD/MM')}</td>
         <td>${cellText(i,'horaRetorno',row.horaRetorno,'HH:MM')}</td>
         <td>${cellText(i,'grupo',row.grupo)}</td>
+        <td class="queda-status-cell" data-i="${i}">${quedaStatusHtml(row)}</td>
         <td class="col-rm"><button class="btn-remove" data-i="${i}">✕</button></td>
-      </tr>`).join('') || `<tr><td colspan="7" style="color:var(--gray);text-align:center;">Nenhuma queda de imagens registrada.</td></tr>`;
+      </tr>`).join('') || `<tr><td colspan="8" style="color:var(--gray);text-align:center;">Nenhuma queda de imagens registrada.</td></tr>`;
 
     bindCellText(body, data.quedaImagens);
+    body.querySelectorAll('textarea.cell-text[data-f="dataQueda"], textarea.cell-text[data-f="horaQueda"], textarea.cell-text[data-f="dataRetorno"]').forEach(el=>{
+      el.addEventListener('input', e=>{
+        const i = +e.target.dataset.i;
+        const cell = body.querySelector(`.queda-status-cell[data-i="${i}"]`);
+        if(cell) cell.innerHTML = quedaStatusHtml(data.quedaImagens[i]);
+      });
+    });
     body.querySelectorAll('.btn-remove').forEach(btn=>{
       btn.addEventListener('click', e=>{
         data.quedaImagens.splice(+e.target.dataset.i,1);
@@ -1310,7 +1389,10 @@
     const quedaRows = data.quedaImagens.filter(r=> r.projeto || r.dataQueda || r.horaQueda || r.dataRetorno || r.horaRetorno || r.grupo);
     if(quedaRows.length){
       lines.push('*Queda de Imagens — Moked:*');
-      quedaRows.forEach(r=> lines.push(`- ${r.projeto || '(sem projeto)'} — Caiu: ${r.dataQueda || '—'} ${r.horaQueda || ''} | Retornou: ${r.dataRetorno || '—'} ${r.horaRetorno || ''} | Grupo: ${r.grupo || '—'}`));
+      quedaRows.forEach(r=>{
+        const s = quedaStatus(r);
+        lines.push(`- ${r.projeto || '(sem projeto)'} — Caiu: ${r.dataQueda || '—'} ${r.horaQueda || ''} | Retornou: ${r.dataRetorno || '—'} ${r.horaRetorno || ''} | Grupo: ${r.grupo || '—'}${s ? ' | ' + s.label : ''}`);
+      });
       lines.push('');
     }
 
@@ -1606,7 +1688,43 @@
     }
 
     sectionTitle('QUEDA DE IMAGENS — MOKED');
-    table(['Projeto','Data da queda','Horário da queda','Data do retorno','Horário do retorno','Grupo responsável'], data.quedaImagens.filter(r=>r.projeto||r.dataQueda||r.horaQueda||r.dataRetorno||r.horaRetorno||r.grupo).map(r=>[r.projeto||'',r.dataQueda||'',r.horaQueda||'',r.dataRetorno||'',r.horaRetorno||'',r.grupo||'']));
+    {
+      const quedaRowsPdf = data.quedaImagens.filter(r=>r.projeto||r.dataQueda||r.horaQueda||r.dataRetorno||r.horaRetorno||r.grupo);
+      if(!quedaRowsPdf.length){
+        doc.setFont('helvetica','italic');
+        doc.setFontSize(9);
+        doc.setTextColor(120,120,120);
+        doc.text('Nenhum registro informado.', marginX, y);
+        doc.setTextColor(20,20,20);
+        y += 20;
+      }else{
+        const statuses = quedaRowsPdf.map(r=> quedaStatus(r));
+        doc.autoTable({
+          startY: y,
+          head:[['Projeto','Data da queda','Horário da queda','Data do retorno','Horário do retorno','Grupo responsável','Status']],
+          body: quedaRowsPdf.map((r,idx)=>[r.projeto||'',r.dataQueda||'',r.horaQueda||'',r.dataRetorno||'',r.horaRetorno||'',r.grupo||'', statuses[idx] ? statuses[idx].label : '']),
+          margin:{left:marginX,right:marginX},
+          styles:{fontSize:9, cellPadding:5, font:'helvetica'},
+          headStyles:{fillColor:[234,246,236], textColor:[31,110,51], fontStyle:'bold'},
+          theme:'grid',
+          didParseCell: function(hookData){
+            if(hookData.section==='body' && hookData.column.index===6){
+              const s = statuses[hookData.row.index];
+              if(s && s.type==='alert'){
+                hookData.cell.styles.fillColor = [253,236,234];
+                hookData.cell.styles.textColor = [169,46,33];
+                hookData.cell.styles.fontStyle = 'bold';
+              }else if(s && s.type==='ok'){
+                hookData.cell.styles.fillColor = [232,246,236];
+                hookData.cell.styles.textColor = [31,110,51];
+                hookData.cell.styles.fontStyle = 'bold';
+              }
+            }
+          }
+        });
+        y = doc.lastAutoTable.finalY + 18;
+      }
+    }
 
     function textBlock(title, text){
       sectionTitle(title);
@@ -1701,6 +1819,14 @@
   renderCalendar().then(()=>{
     selectDay(today.getDate());
   });
+  setInterval(()=>{
+    const body = document.getElementById('quedaBody');
+    if(!body || !state.currentData) return;
+    state.currentData.quedaImagens.forEach((row,i)=>{
+      const cell = body.querySelector(`.queda-status-cell[data-i="${i}"]`);
+      if(cell) cell.innerHTML = quedaStatusHtml(row);
+    });
+  }, 60000);
 })();
 </script>
 </body>
