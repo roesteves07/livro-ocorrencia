@@ -599,6 +599,7 @@
   const db = getFirestore(app);
   const DIAS_COLLECTION = 'ocorrencias'; // nome da coleção no Firestore
   const QUEDAS_COLLECTION = 'quedas_imagens'; // coleção compartilhada entre todos os dias
+  const CHECKLIST_COLLECTION = 'checklist_equipamentos'; // coleção compartilhada entre todos os dias
 
   // Funções que substituem o antigo window.storage, agora usando Firestore.
   async function dbGetDay(key){
@@ -617,6 +618,16 @@
   }
   async function dbDeleteQueda(id){
     await deleteDoc(doc(db, QUEDAS_COLLECTION, id));
+  }
+  async function dbListChecklist(){
+    const snap = await getDocs(collection(db, CHECKLIST_COLLECTION));
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  }
+  async function dbSetChecklistItem(id, data){
+    await setDoc(doc(db, CHECKLIST_COLLECTION, id), data);
+  }
+  async function dbDeleteChecklistItem(id){
+    await deleteDoc(doc(db, CHECKLIST_COLLECTION, id));
   }
   async function dbListMonthKeys(prefix){
     // prefix no formato "YYYY-MM"; documentId() permite range query pelo próprio ID do doc
@@ -672,7 +683,6 @@
     return {
       staffDiurno:[],
       staffNoturno:[],
-      checklist: CHECKLIST_DEFAULT.map(r=>({...r})),
       pm: pmBlankRows(6),
       gateOne:'',
       diurno:'',
@@ -694,7 +704,8 @@
     currentData:null,
     operatorName:'',
     autosaveTimer:null,
-    quedaImagens:[]
+    quedaImagens:[],
+    checklist:[]
   };
 
   const today = new Date();
@@ -815,6 +826,7 @@
       state.currentData = defaultData();
     }
     await loadQuedaImagens();
+    await loadChecklist();
     renderDayPanel();
   }
 
@@ -825,6 +837,25 @@
     }catch(e){
       console.error('Erro ao carregar quedas de imagens', e);
       state.quedaImagens = state.quedaImagens || [];
+    }
+  }
+
+  let checklistSeeded = false;
+  async function loadChecklist(){
+    try{
+      let items = await dbListChecklist();
+      if(!items.length && !checklistSeeded){
+        checklistSeeded = true;
+        for(const base of CHECKLIST_DEFAULT){
+          const id = 'c_' + Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+          await dbSetChecklistItem(id, {descricao:base.descricao, alteracao:'', obs:''});
+        }
+        items = await dbListChecklist();
+      }
+      state.checklist = items;
+    }catch(e){
+      console.error('Erro ao carregar check-list de equipamentos', e);
+      state.checklist = state.checklist || [];
     }
   }
 
@@ -990,7 +1021,17 @@
     });
     document.getElementById('addStaffDiurno').onclick = ()=>{ data.staffDiurno.push({nome:'',horario:'',obs:''}); renderStaffTable('staffDiurno','staffDiurnoBody'); scheduleAutosave(); };
     document.getElementById('addStaffNoturno').onclick = ()=>{ data.staffNoturno.push({nome:'',horario:'',obs:''}); renderStaffTable('staffNoturno','staffNoturnoBody'); scheduleAutosave(); };
-    document.getElementById('addChecklist').onclick = ()=>{ data.checklist.push({descricao:'',alteracao:'',obs:''}); renderChecklistTable(); scheduleAutosave(); };
+    document.getElementById('addChecklist').onclick = async ()=>{
+      const id = 'c_' + Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+      const row = { id, descricao:'', alteracao:'', obs:'' };
+      state.checklist.push(row);
+      renderChecklistTable();
+      try{
+        await dbSetChecklistItem(id, { descricao:'', alteracao:'', obs:'' });
+      }catch(e){
+        console.error('Erro ao criar item do check-list', e);
+      }
+    };
     document.getElementById('addPm').onclick = ()=>{ data.pm.push({conta:'',cliente:'',hora:'',atendente:'',obs:''}); renderPmTable(); scheduleAutosave(); };
     document.getElementById('addQueda').onclick = async ()=>{
       const id = 'q_' + Date.now().toString(36) + Math.random().toString(36).slice(2,7);
@@ -1159,10 +1200,24 @@
     });
   }
 
+  const checklistSaveTimers = {};
+  function scheduleChecklistAutosave(id){
+    if(checklistSaveTimers[id]) clearTimeout(checklistSaveTimers[id]);
+    checklistSaveTimers[id] = setTimeout(async ()=>{
+      const row = state.checklist.find(r=>r.id===id);
+      if(!row) return;
+      try{
+        await dbSetChecklistItem(id, {descricao: row.descricao||'', alteracao: row.alteracao||'', obs: row.obs||''});
+      }catch(e){
+        console.error('Erro ao salvar check-list de equipamentos', e);
+      }
+    }, 1000);
+  }
+
   function renderChecklistTable(){
     const body = document.getElementById('checklistBody');
-    const data = state.currentData;
-    body.innerHTML = data.checklist.map((row,i)=>`
+    if(!body) return;
+    body.innerHTML = state.checklist.map((row,i)=>`
       <tr>
         <td>${cellText(i,'descricao',row.descricao)}</td>
         <td>
@@ -1174,21 +1229,37 @@
         </td>
         <td>${cellText(i,'obs',row.obs)}</td>
         <td class="col-rm"><button class="btn-remove" data-i="${i}">✕</button></td>
-      </tr>`).join('');
+      </tr>`).join('') || `<tr><td colspan="4" style="color:var(--gray);text-align:center;">Nenhum item no check-list.</td></tr>`;
 
-    bindCellText(body, data.checklist);
+    body.querySelectorAll('textarea.cell-text').forEach(el=>{
+      autoGrow(el);
+      el.addEventListener('input', e=>{
+        const i = +e.target.dataset.i, f = e.target.dataset.f;
+        const row = state.checklist[i];
+        if(!row) return;
+        row[f] = e.target.value;
+        autoGrow(e.target);
+        scheduleChecklistAutosave(row.id);
+      });
+    });
     body.querySelectorAll('select').forEach(inp=>{
       inp.addEventListener('input', e=>{
         const i = +e.target.dataset.i, f = e.target.dataset.f;
-        data.checklist[i][f] = e.target.value;
-        scheduleAutosave();
+        const row = state.checklist[i];
+        if(!row) return;
+        row[f] = e.target.value;
+        scheduleChecklistAutosave(row.id);
       });
     });
     body.querySelectorAll('.btn-remove').forEach(btn=>{
-      btn.addEventListener('click', e=>{
-        data.checklist.splice(+e.target.dataset.i,1);
+      btn.addEventListener('click', async e=>{
+        const i = +e.target.dataset.i;
+        const row = state.checklist[i];
+        state.checklist.splice(i,1);
         renderChecklistTable();
-        scheduleAutosave();
+        if(row && row.id){
+          try{ await dbDeleteChecklistItem(row.id); }catch(err){ console.error('Erro ao excluir item do check-list', err); }
+        }
       });
     });
   }
@@ -1530,7 +1601,7 @@
       lines.push('');
     }
 
-    const checklistRows = data.checklist.filter(r=> r.alteracao || r.obs);
+    const checklistRows = state.checklist.filter(r=> r.alteracao || r.obs);
     if(checklistRows.length){
       lines.push('*Check-list equipamentos (alterações):*');
       checklistRows.forEach(r=> lines.push(`- ${r.descricao}: ${r.alteracao || '—'}${r.obs ? ' — ' + r.obs : ''}`));
@@ -1802,7 +1873,7 @@
     }
 
     sectionTitle('CHECK-LIST EQUIPAMENTOS');
-    table(['Descrição','Alteração','Observações'], data.checklist.map(r=>[r.descricao||'',r.alteracao||'',r.obs||'']));
+    table(['Descrição','Alteração','Observações'], state.checklist.map(r=>[r.descricao||'',r.alteracao||'',r.obs||'']));
 
     sectionTitle('ACIONAMENTO DA POLÍCIA MILITAR');
     table(['Conta','Cliente','Hora','Atendente','Observações'], data.pm.filter(r=>r.conta||r.cliente||r.hora||r.atendente||r.obs).map(r=>[r.conta||'',r.cliente||'',r.hora||'',r.atendente||'',r.obs||'']));
