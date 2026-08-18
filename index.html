@@ -581,7 +581,7 @@
   // ====================================================================
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
   import {
-    getFirestore, doc, getDoc, setDoc, collection, getDocs,
+    getFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs,
     query, where, documentId
   } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
 
@@ -598,6 +598,7 @@
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
   const DIAS_COLLECTION = 'ocorrencias'; // nome da coleção no Firestore
+  const QUEDAS_COLLECTION = 'quedas_imagens'; // coleção compartilhada entre todos os dias
 
   // Funções que substituem o antigo window.storage, agora usando Firestore.
   async function dbGetDay(key){
@@ -606,6 +607,16 @@
   }
   async function dbSetDay(key, data){
     await setDoc(doc(db, DIAS_COLLECTION, key), data);
+  }
+  async function dbListQuedas(){
+    const snap = await getDocs(collection(db, QUEDAS_COLLECTION));
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  }
+  async function dbSetQueda(id, data){
+    await setDoc(doc(db, QUEDAS_COLLECTION, id), data);
+  }
+  async function dbDeleteQueda(id){
+    await deleteDoc(doc(db, QUEDAS_COLLECTION, id));
   }
   async function dbListMonthKeys(prefix){
     // prefix no formato "YYYY-MM"; documentId() permite range query pelo próprio ID do doc
@@ -643,6 +654,8 @@
     '👮','👷','👩‍⚕️','👨‍⚕️','👩‍💻','👨‍💻','🚨','🔒','✅','❌'
   ];
   const HORARIOS = ['07H00 ÀS 19H00','19H00 ÀS 07H00','08H00 ÀS 20H00','07H00 ÀS 17H00'];
+  const GRUPOS_QUEDA = ['MokImp','MokLog','MokPat','MokRes','MokVip'];
+  const PROJETOS_QUEDA = ['P032', 'P035', 'P160', 'P180', 'P256', 'P260A', 'P260B', 'P260C', 'P299', 'P311A', 'P311B', 'P358', 'P359', 'P376', 'P380', 'P560', 'P600', 'P601', 'P604', 'P605', 'P606', 'P607', 'P720', 'P738', 'P740', 'P750', 'P760', 'P761', 'P763', 'P770', 'P777', 'P808', 'P808B', 'P846', 'P851', 'P854', 'P855', 'P857', 'P859', 'P861', 'P862', 'P863', 'P865', 'P866', 'P867', 'P868', 'P925', 'P931', 'P932', 'P936', 'P937', 'P939', 'P942', 'P943', 'P944', 'P946', 'P947', 'P951', 'P952', 'P953', 'P954', 'P955', 'P956', 'P958', 'P959'];
   const CHECKLIST_DEFAULT = [
     {descricao:'05 - Aparelhos Celulares / 03 - Carregadores', alteracao:'', obs:''},
     {descricao:'07 - Controles Remotos (Televisor & Ar Condicionado)', alteracao:'', obs:''},
@@ -662,7 +675,6 @@
       checklist: CHECKLIST_DEFAULT.map(r=>({...r})),
       pm: pmBlankRows(6),
       gateOne:'',
-      quedaImagens:[],
       diurno:'',
       noturno:'',
       atualizadoPor:'',
@@ -681,7 +693,8 @@
     filledDays:new Set(),
     currentData:null,
     operatorName:'',
-    autosaveTimer:null
+    autosaveTimer:null,
+    quedaImagens:[]
   };
 
   const today = new Date();
@@ -787,11 +800,32 @@
       if(parsed && Array.isArray(parsed.staff) && !parsed.staffDiurno && !parsed.staffNoturno){
         merged.staffDiurno = parsed.staff;
       }
+      if(parsed && Array.isArray(parsed.quedaImagens) && parsed.quedaImagens.length){
+        for(const row of parsed.quedaImagens){
+          const newId = 'q_' + Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+          try{ await dbSetQueda(newId, {
+            projeto: row.projeto||'', dataQueda: row.dataQueda||'', horaQueda: row.horaQueda||'',
+            dataRetorno: row.dataRetorno||'', horaRetorno: row.horaRetorno||'', grupo: row.grupo||''
+          }); }catch(e){ /* ignora erro de migração individual */ }
+        }
+        delete merged.quedaImagens;
+      }
       state.currentData = merged;
     }catch(e){
       state.currentData = defaultData();
     }
+    await loadQuedaImagens();
     renderDayPanel();
+  }
+
+  async function loadQuedaImagens(){
+    try{
+      const all = await dbListQuedas();
+      state.quedaImagens = all.filter(r => !(r.dataRetorno && r.dataRetorno.trim()));
+    }catch(e){
+      console.error('Erro ao carregar quedas de imagens', e);
+      state.quedaImagens = state.quedaImagens || [];
+    }
   }
 
   function fieldDateLabel(){
@@ -958,7 +992,17 @@
     document.getElementById('addStaffNoturno').onclick = ()=>{ data.staffNoturno.push({nome:'',horario:'',obs:''}); renderStaffTable('staffNoturno','staffNoturnoBody'); scheduleAutosave(); };
     document.getElementById('addChecklist').onclick = ()=>{ data.checklist.push({descricao:'',alteracao:'',obs:''}); renderChecklistTable(); scheduleAutosave(); };
     document.getElementById('addPm').onclick = ()=>{ data.pm.push({conta:'',cliente:'',hora:'',atendente:'',obs:''}); renderPmTable(); scheduleAutosave(); };
-    document.getElementById('addQueda').onclick = ()=>{ data.quedaImagens.push({projeto:'',dataQueda:'',horaQueda:'',dataRetorno:'',horaRetorno:'',grupo:''}); renderQuedaTable(); scheduleAutosave(); };
+    document.getElementById('addQueda').onclick = async ()=>{
+      const id = 'q_' + Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+      const row = { id, projeto:'', dataQueda:'', horaQueda:'', dataRetorno:'', horaRetorno:'', grupo:'' };
+      state.quedaImagens.push(row);
+      renderQuedaTable();
+      try{
+        await dbSetQueda(id, { projeto:'', dataQueda:'', horaQueda:'', dataRetorno:'', horaRetorno:'', grupo:'' });
+      }catch(e){
+        console.error('Erro ao criar queda de imagens', e);
+      }
+    };
   }
 
   function cellText(i, f, value, placeholder){
@@ -1008,6 +1052,36 @@
     </select>`;
     if(isCustom){
       html += `<input type="text" class="custom-horario-input" data-i="${i}" value="${escapeAttr(value)}" placeholder="Digite o horário">`;
+    }
+    return html;
+  }
+
+  function projetoSelect(i, row){
+    const isCustom = !!row.projetoCustom || (row.projeto && !PROJETOS_QUEDA.includes(row.projeto));
+    const value = row.projeto || '';
+    const opts = PROJETOS_QUEDA.map(p=>`<option value="${escapeAttr(p)}" ${value===p?'selected':''}>${escapeHtml(p)}</option>`).join('');
+    let html = `<select class="projeto-select" data-i="${i}" data-f="projeto">
+      <option value="" ${(!isCustom && value==='')?'selected':''}>Selecionar...</option>
+      ${opts}
+      <option value="__custom__" ${isCustom?'selected':''}>Outro (digitar)</option>
+    </select>`;
+    if(isCustom){
+      html += `<input type="text" class="custom-projeto-input" data-i="${i}" value="${escapeAttr(value)}" placeholder="Digite o projeto">`;
+    }
+    return html;
+  }
+
+  function grupoSelect(i, row){
+    const isCustom = !!row.grupoCustom || (row.grupo && !GRUPOS_QUEDA.includes(row.grupo));
+    const value = row.grupo || '';
+    const opts = GRUPOS_QUEDA.map(g=>`<option value="${escapeAttr(g)}" ${value===g?'selected':''}>${escapeHtml(g)}</option>`).join('');
+    let html = `<select class="grupo-select" data-i="${i}" data-f="grupo">
+      <option value="" ${(!isCustom && value==='')?'selected':''}>Selecionar...</option>
+      ${opts}
+      <option value="__custom__" ${isCustom?'selected':''}>Outro (digitar)</option>
+    </select>`;
+    if(isCustom){
+      html += `<input type="text" class="custom-grupo-input" data-i="${i}" value="${escapeAttr(value)}" placeholder="Digite o grupo">`;
     }
     return html;
   }
@@ -1185,34 +1259,118 @@
     return `<span class="${cls}">${escapeHtml(s.label)}</span>`;
   }
 
+  const quedaSaveTimers = {};
+  function scheduleQuedaAutosave(id){
+    if(quedaSaveTimers[id]) clearTimeout(quedaSaveTimers[id]);
+    quedaSaveTimers[id] = setTimeout(async ()=>{
+      const row = state.quedaImagens.find(r=>r.id===id);
+      if(!row) return;
+      try{
+        await dbSetQueda(id, {
+          projeto: row.projeto||'', dataQueda: row.dataQueda||'', horaQueda: row.horaQueda||'',
+          dataRetorno: row.dataRetorno||'', horaRetorno: row.horaRetorno||'', grupo: row.grupo||''
+        });
+      }catch(e){
+        console.error('Erro ao salvar queda de imagens', e);
+      }
+    }, 1000);
+  }
+
   function renderQuedaTable(){
     const body = document.getElementById('quedaBody');
-    const data = state.currentData;
-    body.innerHTML = data.quedaImagens.map((row,i)=>`
+    if(!body) return;
+    body.innerHTML = state.quedaImagens.map((row,i)=>`
       <tr>
-        <td>${cellText(i,'projeto',row.projeto)}</td>
+        <td>${projetoSelect(i, row)}</td>
         <td>${cellText(i,'dataQueda',row.dataQueda,'DD/MM')}</td>
         <td>${cellText(i,'horaQueda',row.horaQueda,'HH:MM')}</td>
         <td>${cellText(i,'dataRetorno',row.dataRetorno,'DD/MM')}</td>
         <td>${cellText(i,'horaRetorno',row.horaRetorno,'HH:MM')}</td>
-        <td>${cellText(i,'grupo',row.grupo)}</td>
+        <td>${grupoSelect(i, row)}</td>
         <td class="queda-status-cell" data-i="${i}">${quedaStatusHtml(row)}</td>
         <td class="col-rm"><button class="btn-remove" data-i="${i}">✕</button></td>
       </tr>`).join('') || `<tr><td colspan="8" style="color:var(--gray);text-align:center;">Nenhuma queda de imagens registrada.</td></tr>`;
 
-    bindCellText(body, data.quedaImagens);
-    body.querySelectorAll('textarea.cell-text[data-f="dataQueda"], textarea.cell-text[data-f="horaQueda"], textarea.cell-text[data-f="dataRetorno"]').forEach(el=>{
+    body.querySelectorAll('textarea.cell-text').forEach(el=>{
+      autoGrow(el);
       el.addEventListener('input', e=>{
-        const i = +e.target.dataset.i;
+        const i = +e.target.dataset.i, f = e.target.dataset.f;
+        const row = state.quedaImagens[i];
+        if(!row) return;
+        row[f] = e.target.value;
+        autoGrow(e.target);
         const cell = body.querySelector(`.queda-status-cell[data-i="${i}"]`);
-        if(cell) cell.innerHTML = quedaStatusHtml(data.quedaImagens[i]);
+        if(cell) cell.innerHTML = quedaStatusHtml(row);
+        scheduleQuedaAutosave(row.id);
+      });
+    });
+    body.querySelectorAll('select.projeto-select').forEach(sel=>{
+      sel.addEventListener('change', e=>{
+        const i = +e.target.dataset.i;
+        const row = state.quedaImagens[i];
+        if(!row) return;
+        if(e.target.value === '__custom__'){
+          row.projeto = '';
+          row.projetoCustom = true;
+        }else{
+          row.projeto = e.target.value;
+          row.projetoCustom = false;
+        }
+        renderQuedaTable();
+        scheduleQuedaAutosave(row.id);
+        if(e.target.value === '__custom__'){
+          const inp = document.querySelector(`.custom-projeto-input[data-i="${i}"]`);
+          if(inp) inp.focus();
+        }
+      });
+    });
+    body.querySelectorAll('.custom-projeto-input').forEach(inp=>{
+      inp.addEventListener('input', e=>{
+        const i = +e.target.dataset.i;
+        const row = state.quedaImagens[i];
+        if(!row) return;
+        row.projeto = e.target.value;
+        scheduleQuedaAutosave(row.id);
+      });
+    });
+    body.querySelectorAll('select.grupo-select').forEach(sel=>{
+      sel.addEventListener('change', e=>{
+        const i = +e.target.dataset.i;
+        const row = state.quedaImagens[i];
+        if(!row) return;
+        if(e.target.value === '__custom__'){
+          row.grupo = '';
+          row.grupoCustom = true;
+        }else{
+          row.grupo = e.target.value;
+          row.grupoCustom = false;
+        }
+        renderQuedaTable();
+        scheduleQuedaAutosave(row.id);
+        if(e.target.value === '__custom__'){
+          const inp = document.querySelector(`.custom-grupo-input[data-i="${i}"]`);
+          if(inp) inp.focus();
+        }
+      });
+    });
+    body.querySelectorAll('.custom-grupo-input').forEach(inp=>{
+      inp.addEventListener('input', e=>{
+        const i = +e.target.dataset.i;
+        const row = state.quedaImagens[i];
+        if(!row) return;
+        row.grupo = e.target.value;
+        scheduleQuedaAutosave(row.id);
       });
     });
     body.querySelectorAll('.btn-remove').forEach(btn=>{
-      btn.addEventListener('click', e=>{
-        data.quedaImagens.splice(+e.target.dataset.i,1);
+      btn.addEventListener('click', async e=>{
+        const i = +e.target.dataset.i;
+        const row = state.quedaImagens[i];
+        state.quedaImagens.splice(i,1);
         renderQuedaTable();
-        scheduleAutosave();
+        if(row && row.id){
+          try{ await dbDeleteQueda(row.id); }catch(err){ console.error('Erro ao excluir queda de imagens', err); }
+        }
       });
     });
   }
@@ -1386,7 +1544,7 @@
       lines.push('');
     }
 
-    const quedaRows = data.quedaImagens.filter(r=> r.projeto || r.dataQueda || r.horaQueda || r.dataRetorno || r.horaRetorno || r.grupo);
+    const quedaRows = state.quedaImagens.filter(r=> r.projeto || r.dataQueda || r.horaQueda || r.dataRetorno || r.horaRetorno || r.grupo);
     if(quedaRows.length){
       lines.push('*Queda de Imagens — Moked:*');
       quedaRows.forEach(r=>{
@@ -1689,7 +1847,7 @@
 
     sectionTitle('QUEDA DE IMAGENS — MOKED');
     {
-      const quedaRowsPdf = data.quedaImagens.filter(r=>r.projeto||r.dataQueda||r.horaQueda||r.dataRetorno||r.horaRetorno||r.grupo);
+      const quedaRowsPdf = state.quedaImagens.filter(r=>r.projeto||r.dataQueda||r.horaQueda||r.dataRetorno||r.horaRetorno||r.grupo);
       if(!quedaRowsPdf.length){
         doc.setFont('helvetica','italic');
         doc.setFontSize(9);
@@ -1821,8 +1979,8 @@
   });
   setInterval(()=>{
     const body = document.getElementById('quedaBody');
-    if(!body || !state.currentData) return;
-    state.currentData.quedaImagens.forEach((row,i)=>{
+    if(!body) return;
+    state.quedaImagens.forEach((row,i)=>{
       const cell = body.querySelector(`.queda-status-cell[data-i="${i}"]`);
       if(cell) cell.innerHTML = quedaStatusHtml(row);
     });
