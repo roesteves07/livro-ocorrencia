@@ -600,6 +600,7 @@
   const DIAS_COLLECTION = 'ocorrencias'; // nome da coleção no Firestore
   const QUEDAS_COLLECTION = 'quedas_imagens'; // coleção compartilhada entre todos os dias
   const CHECKLIST_COLLECTION = 'checklist_equipamentos'; // coleção compartilhada entre todos os dias
+  const FALHAS_COLLECTION = 'falhas_alarme'; // coleção compartilhada entre todos os dias
 
   // Funções que substituem o antigo window.storage, agora usando Firestore.
   async function dbGetDay(key){
@@ -628,6 +629,16 @@
   }
   async function dbDeleteChecklistItem(id){
     await deleteDoc(doc(db, CHECKLIST_COLLECTION, id));
+  }
+  async function dbListFalhas(){
+    const snap = await getDocs(collection(db, FALHAS_COLLECTION));
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  }
+  async function dbSetFalha(id, data){
+    await setDoc(doc(db, FALHAS_COLLECTION, id), data);
+  }
+  async function dbDeleteFalha(id){
+    await deleteDoc(doc(db, FALHAS_COLLECTION, id));
   }
   async function dbListMonthKeys(prefix){
     // prefix no formato "YYYY-MM"; documentId() permite range query pelo próprio ID do doc
@@ -705,7 +716,8 @@
     operatorName:'',
     autosaveTimer:null,
     quedaImagens:[],
-    checklist:[]
+    checklist:[],
+    falhasAlarme:[]
   };
 
   const today = new Date();
@@ -827,6 +839,7 @@
     }
     await loadQuedaImagens();
     await loadChecklist();
+    await loadFalhasAlarme();
     renderDayPanel();
   }
 
@@ -856,6 +869,16 @@
     }catch(e){
       console.error('Erro ao carregar check-list de equipamentos', e);
       state.checklist = state.checklist || [];
+    }
+  }
+
+  async function loadFalhasAlarme(){
+    try{
+      const all = await dbListFalhas();
+      state.falhasAlarme = all.filter(r => !(r.dataRetorno && r.dataRetorno.trim()));
+    }catch(e){
+      console.error('Erro ao carregar falhas de comunicação', e);
+      state.falhasAlarme = state.falhasAlarme || [];
     }
   }
 
@@ -919,6 +942,12 @@
       </section>
 
       <section class="block">
+        <h3>Falha de Comunicação — Sistema de Alarme <button class="btn-add" id="addFalha">+ adicionar</button></h3>
+        <table><thead><tr><th style="width:12%">Projeto</th><th style="width:14%">Data da falha</th><th style="width:10%">Horário da falha</th><th style="width:14%">Data do retorno</th><th style="width:10%">Horário do retorno</th><th style="width:14%">Grupo responsável</th><th style="width:14%">Status</th><th class="col-rm"></th></tr></thead>
+        <tbody id="falhaBody"></tbody></table>
+      </section>
+
+      <section class="block">
         <h3>Operadores de plantão — Diurno <button class="btn-add" id="addStaffDiurno">+ adicionar</button></h3>
         <table><thead><tr><th style="width:26%">Nome</th><th style="width:22%">Entrada / Saída</th><th>Descrição / Observações</th><th class="col-rm"></th></tr></thead>
         <tbody id="staffDiurnoBody"></tbody></table>
@@ -965,6 +994,7 @@
     renderChecklistTable();
     renderPmTable();
     renderQuedaTable();
+    renderFalhaTable();
 
     document.getElementById('gateOneText').addEventListener('input', e=>{ data.gateOne = e.target.innerHTML; scheduleAutosave(); });
     document.getElementById('diurnoText').addEventListener('input', e=>{ data.diurno = e.target.innerHTML; scheduleAutosave(); });
@@ -1042,6 +1072,17 @@
         await dbSetQueda(id, { projeto:'', dataQueda:'', horaQueda:'', dataRetorno:'', horaRetorno:'', grupo:'' });
       }catch(e){
         console.error('Erro ao criar queda de imagens', e);
+      }
+    };
+    document.getElementById('addFalha').onclick = async ()=>{
+      const id = 'f_' + Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+      const row = { id, projeto:'', dataFalha:'', horaFalha:'', dataRetorno:'', horaRetorno:'', grupo:'' };
+      state.falhasAlarme.push(row);
+      renderFalhaTable();
+      try{
+        await dbSetFalha(id, { projeto:'', dataFalha:'', horaFalha:'', dataRetorno:'', horaRetorno:'', grupo:'' });
+      }catch(e){
+        console.error('Erro ao criar falha de comunicação', e);
       }
     };
   }
@@ -1330,6 +1371,27 @@
     return `<span class="${cls}">${escapeHtml(s.label)}</span>`;
   }
 
+  function falhaStatus(row){
+    if(row.dataRetorno && row.dataRetorno.trim()){
+      return { type:'ok', label:'Comunicação restabelecida' };
+    }
+    const falhaDt = parseQuedaDateTime(row.dataFalha, row.horaFalha, state.year);
+    if(!falhaDt) return null;
+    const diffMs = Date.now() - falhaDt.getTime();
+    if(diffMs < 0) return null;
+    const diffDays = Math.floor(diffMs / 86400000);
+    const diffHours = Math.floor((diffMs % 86400000) / 3600000);
+    const label = diffDays > 0 ? `${diffDays}d ${diffHours}h sem comunicação` : `${diffHours}h sem comunicação`;
+    return { type: (diffMs / 86400000) >= 5 ? 'alert' : 'neutral', label };
+  }
+
+  function falhaStatusHtml(row){
+    const s = falhaStatus(row);
+    if(!s) return '';
+    const cls = s.type==='ok' ? 'queda-status-ok' : s.type==='alert' ? 'queda-status-alert' : 'queda-status-neutral';
+    return `<span class="${cls}">${escapeHtml(s.label)}</span>`;
+  }
+
   const quedaSaveTimers = {};
   function scheduleQuedaAutosave(id){
     if(quedaSaveTimers[id]) clearTimeout(quedaSaveTimers[id]);
@@ -1441,6 +1503,122 @@
         renderQuedaTable();
         if(row && row.id){
           try{ await dbDeleteQueda(row.id); }catch(err){ console.error('Erro ao excluir queda de imagens', err); }
+        }
+      });
+    });
+  }
+
+  const falhaSaveTimers = {};
+  function scheduleFalhaAutosave(id){
+    if(falhaSaveTimers[id]) clearTimeout(falhaSaveTimers[id]);
+    falhaSaveTimers[id] = setTimeout(async ()=>{
+      const row = state.falhasAlarme.find(r=>r.id===id);
+      if(!row) return;
+      try{
+        await dbSetFalha(id, {
+          projeto: row.projeto||'', dataFalha: row.dataFalha||'', horaFalha: row.horaFalha||'',
+          dataRetorno: row.dataRetorno||'', horaRetorno: row.horaRetorno||'', grupo: row.grupo||''
+        });
+      }catch(e){
+        console.error('Erro ao salvar falha de comunicação', e);
+      }
+    }, 1000);
+  }
+
+  function renderFalhaTable(){
+    const body = document.getElementById('falhaBody');
+    if(!body) return;
+    body.innerHTML = state.falhasAlarme.map((row,i)=>`
+      <tr>
+        <td>${projetoSelect(i, row)}</td>
+        <td>${cellText(i,'dataFalha',row.dataFalha,'DD/MM')}</td>
+        <td>${cellText(i,'horaFalha',row.horaFalha,'HH:MM')}</td>
+        <td>${cellText(i,'dataRetorno',row.dataRetorno,'DD/MM')}</td>
+        <td>${cellText(i,'horaRetorno',row.horaRetorno,'HH:MM')}</td>
+        <td>${grupoSelect(i, row)}</td>
+        <td class="falha-status-cell" data-i="${i}">${falhaStatusHtml(row)}</td>
+        <td class="col-rm"><button class="btn-remove" data-i="${i}">✕</button></td>
+      </tr>`).join('') || `<tr><td colspan="8" style="color:var(--gray);text-align:center;">Nenhuma falha de comunicação registrada.</td></tr>`;
+
+    body.querySelectorAll('textarea.cell-text').forEach(el=>{
+      autoGrow(el);
+      el.addEventListener('input', e=>{
+        const i = +e.target.dataset.i, f = e.target.dataset.f;
+        const row = state.falhasAlarme[i];
+        if(!row) return;
+        row[f] = e.target.value;
+        autoGrow(e.target);
+        const cell = body.querySelector(`.falha-status-cell[data-i="${i}"]`);
+        if(cell) cell.innerHTML = falhaStatusHtml(row);
+        scheduleFalhaAutosave(row.id);
+      });
+    });
+    body.querySelectorAll('select.projeto-select').forEach(sel=>{
+      sel.addEventListener('change', e=>{
+        const i = +e.target.dataset.i;
+        const row = state.falhasAlarme[i];
+        if(!row) return;
+        if(e.target.value === '__custom__'){
+          row.projeto = '';
+          row.projetoCustom = true;
+        }else{
+          row.projeto = e.target.value;
+          row.projetoCustom = false;
+        }
+        renderFalhaTable();
+        scheduleFalhaAutosave(row.id);
+        if(e.target.value === '__custom__'){
+          const inp = document.querySelector(`.custom-projeto-input[data-i="${i}"]`);
+          if(inp) inp.focus();
+        }
+      });
+    });
+    body.querySelectorAll('.custom-projeto-input').forEach(inp=>{
+      inp.addEventListener('input', e=>{
+        const i = +e.target.dataset.i;
+        const row = state.falhasAlarme[i];
+        if(!row) return;
+        row.projeto = e.target.value;
+        scheduleFalhaAutosave(row.id);
+      });
+    });
+    body.querySelectorAll('select.grupo-select').forEach(sel=>{
+      sel.addEventListener('change', e=>{
+        const i = +e.target.dataset.i;
+        const row = state.falhasAlarme[i];
+        if(!row) return;
+        if(e.target.value === '__custom__'){
+          row.grupo = '';
+          row.grupoCustom = true;
+        }else{
+          row.grupo = e.target.value;
+          row.grupoCustom = false;
+        }
+        renderFalhaTable();
+        scheduleFalhaAutosave(row.id);
+        if(e.target.value === '__custom__'){
+          const inp = document.querySelector(`.custom-grupo-input[data-i="${i}"]`);
+          if(inp) inp.focus();
+        }
+      });
+    });
+    body.querySelectorAll('.custom-grupo-input').forEach(inp=>{
+      inp.addEventListener('input', e=>{
+        const i = +e.target.dataset.i;
+        const row = state.falhasAlarme[i];
+        if(!row) return;
+        row.grupo = e.target.value;
+        scheduleFalhaAutosave(row.id);
+      });
+    });
+    body.querySelectorAll('.btn-remove').forEach(btn=>{
+      btn.addEventListener('click', async e=>{
+        const i = +e.target.dataset.i;
+        const row = state.falhasAlarme[i];
+        state.falhasAlarme.splice(i,1);
+        renderFalhaTable();
+        if(row && row.id){
+          try{ await dbDeleteFalha(row.id); }catch(err){ console.error('Erro ao excluir falha de comunicação', err); }
         }
       });
     });
@@ -1621,6 +1799,16 @@
       quedaRows.forEach(r=>{
         const s = quedaStatus(r);
         lines.push(`- ${r.projeto || '(sem projeto)'} — Caiu: ${r.dataQueda || '—'} ${r.horaQueda || ''} | Retornou: ${r.dataRetorno || '—'} ${r.horaRetorno || ''} | Grupo: ${r.grupo || '—'}${s ? ' | ' + s.label : ''}`);
+      });
+      lines.push('');
+    }
+
+    const falhaRows = state.falhasAlarme.filter(r=> r.projeto || r.dataFalha || r.horaFalha || r.dataRetorno || r.horaRetorno || r.grupo);
+    if(falhaRows.length){
+      lines.push('*Falha de Comunicação — Sistema de Alarme:*');
+      falhaRows.forEach(r=>{
+        const s = falhaStatus(r);
+        lines.push(`- ${r.projeto || '(sem projeto)'} — Falhou: ${r.dataFalha || '—'} ${r.horaFalha || ''} | Retornou: ${r.dataRetorno || '—'} ${r.horaRetorno || ''} | Grupo: ${r.grupo || '—'}${s ? ' | ' + s.label : ''}`);
       });
       lines.push('');
     }
@@ -1955,6 +2143,45 @@
       }
     }
 
+    sectionTitle('FALHA DE COMUNICAÇÃO — SISTEMA DE ALARME');
+    {
+      const falhaRowsPdf = state.falhasAlarme.filter(r=>r.projeto||r.dataFalha||r.horaFalha||r.dataRetorno||r.horaRetorno||r.grupo);
+      if(!falhaRowsPdf.length){
+        doc.setFont('helvetica','italic');
+        doc.setFontSize(9);
+        doc.setTextColor(120,120,120);
+        doc.text('Nenhum registro informado.', marginX, y);
+        doc.setTextColor(20,20,20);
+        y += 20;
+      }else{
+        const statuses = falhaRowsPdf.map(r=> falhaStatus(r));
+        doc.autoTable({
+          startY: y,
+          head:[['Projeto','Data da falha','Horário da falha','Data do retorno','Horário do retorno','Grupo responsável','Status']],
+          body: falhaRowsPdf.map((r,idx)=>[r.projeto||'',r.dataFalha||'',r.horaFalha||'',r.dataRetorno||'',r.horaRetorno||'',r.grupo||'', statuses[idx] ? statuses[idx].label : '']),
+          margin:{left:marginX,right:marginX},
+          styles:{fontSize:9, cellPadding:5, font:'helvetica'},
+          headStyles:{fillColor:[234,246,236], textColor:[31,110,51], fontStyle:'bold'},
+          theme:'grid',
+          didParseCell: function(hookData){
+            if(hookData.section==='body' && hookData.column.index===6){
+              const s = statuses[hookData.row.index];
+              if(s && s.type==='alert'){
+                hookData.cell.styles.fillColor = [253,236,234];
+                hookData.cell.styles.textColor = [169,46,33];
+                hookData.cell.styles.fontStyle = 'bold';
+              }else if(s && s.type==='ok'){
+                hookData.cell.styles.fillColor = [232,246,236];
+                hookData.cell.styles.textColor = [31,110,51];
+                hookData.cell.styles.fontStyle = 'bold';
+              }
+            }
+          }
+        });
+        y = doc.lastAutoTable.finalY + 18;
+      }
+    }
+
     function textBlock(title, text){
       sectionTitle(title);
       const html = looksLikeHtml(text) ? text : plainTextToHtml(text);
@@ -2050,11 +2277,19 @@
   });
   setInterval(()=>{
     const body = document.getElementById('quedaBody');
-    if(!body) return;
-    state.quedaImagens.forEach((row,i)=>{
-      const cell = body.querySelector(`.queda-status-cell[data-i="${i}"]`);
-      if(cell) cell.innerHTML = quedaStatusHtml(row);
-    });
+    if(body){
+      state.quedaImagens.forEach((row,i)=>{
+        const cell = body.querySelector(`.queda-status-cell[data-i="${i}"]`);
+        if(cell) cell.innerHTML = quedaStatusHtml(row);
+      });
+    }
+    const falhaBody = document.getElementById('falhaBody');
+    if(falhaBody){
+      state.falhasAlarme.forEach((row,i)=>{
+        const cell = falhaBody.querySelector(`.falha-status-cell[data-i="${i}"]`);
+        if(cell) cell.innerHTML = falhaStatusHtml(row);
+      });
+    }
   }, 60000);
 })();
 </script>
