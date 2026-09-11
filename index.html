@@ -21,6 +21,40 @@
     --danger:#c74b3f;
     --amber:#c98a1f;
   }
+  html[data-theme="dark"]{
+    --green-dark:#5fce85;
+    --green:#4caf6a;
+    --green-light:#1c3324;
+    --ink:#eef2ef;
+    --gray:#a7b3ac;
+    --bg:#141815;
+    --card:#1d231f;
+    --border:#333c36;
+    --danger:#ff8a75;
+    --amber:#e0b45a;
+  }
+  html[data-theme="dark"] body{background:var(--bg);color:var(--ink);}
+  html[data-theme="dark"] .alert-block{background:#16261c;}
+  html[data-theme="dark"] .alert-block .rt-editor{background:#12180f;border-color:#2d4a35;}
+  html[data-theme="dark"] .rt-editor{background:#1a201c;color:var(--ink);}
+  html[data-theme="dark"] textarea, html[data-theme="dark"] input, html[data-theme="dark"] select{
+    background:#1a201c;color:var(--ink);border-color:var(--border);
+  }
+  html[data-theme="dark"] .queda-status-alert{background:#3a1e1c;color:#ff9d8a;border-color:#5c2e29;}
+  html[data-theme="dark"] .queda-status-ok{background:#1e3a26;color:#7be0a0;border-color:#2e5c3d;}
+  html[data-theme="dark"] .rt-emoji-panel{background:#1d231f;}
+  html[data-theme="dark"] .modal-box{background:#1d231f;}
+  html[data-theme="dark"] .theme-toggle{background:#1a201c;border-color:var(--border);color:var(--ink);}
+  .theme-toggle{
+    width:38px;height:38px;
+    border:1px solid var(--border);
+    border-radius:50%;
+    background:#fff;
+    cursor:pointer;
+    font-size:16px;
+    display:flex;align-items:center;justify-content:center;
+    flex-shrink:0;
+  }
   *{box-sizing:border-box;}
   body{
     margin:0;
@@ -548,6 +582,7 @@
     </select>
     <input id="operatorCustomInput" type="text" placeholder="Digite o nome" style="display:none;">
   </div>
+  <button type="button" class="theme-toggle" id="themeToggle" title="Alternar modo claro/escuro">🌙</button>
 </div>
 
 <div class="wrap">
@@ -749,6 +784,20 @@
     state.operatorName = operatorCustomInput.value;
   });
 
+  const themeToggle = document.getElementById('themeToggle');
+  function applyTheme(theme){
+    document.documentElement.setAttribute('data-theme', theme);
+    themeToggle.textContent = theme === 'dark' ? '☀️' : '🌙';
+    try{ localStorage.setItem('theme-preference', theme); }catch(e){}
+  }
+  let savedTheme = 'light';
+  try{ savedTheme = localStorage.getItem('theme-preference') || 'light'; }catch(e){}
+  applyTheme(savedTheme);
+  themeToggle.addEventListener('click', ()=>{
+    const current = document.documentElement.getAttribute('data-theme');
+    applyTheme(current === 'dark' ? 'light' : 'dark');
+  });
+
   DOW.forEach(d=>{
     const el = document.createElement('div');
     el.className = 'cal-dow';
@@ -932,7 +981,7 @@
             <div class="rt-emoji-panel"></div>
           </div>
         </div>
-        <div class="rt-editor" id="gateOneText" contenteditable="true" data-placeholder="Avisos urgentes para toda a operação (ex: instabilidades, procedimentos temporários, alertas gerais)...">${richInitialHtml(data.gateOne)}</div>
+        <div class="rt-editor" id="gateOneText" contenteditable="true" spellcheck="true" lang="pt-BR" data-placeholder="Avisos urgentes para toda a operação (ex: instabilidades, procedimentos temporários, alertas gerais)...">${richInitialHtml(data.gateOne)}</div>
       </section>
 
       <section class="block">
@@ -964,7 +1013,7 @@
             <div class="rt-emoji-panel"></div>
           </div>
         </div>
-        <div class="rt-editor" id="diurnoText" contenteditable="true" data-placeholder="Descreva as ocorrências do turno diurno...">${richInitialHtml(data.diurno)}</div>
+        <div class="rt-editor" id="diurnoText" contenteditable="true" spellcheck="true" lang="pt-BR" data-placeholder="Descreva as ocorrências do turno diurno...">${richInitialHtml(data.diurno)}</div>
       </section>
 
       <section class="block">
@@ -984,7 +1033,7 @@
             <div class="rt-emoji-panel"></div>
           </div>
         </div>
-        <div class="rt-editor" id="noturnoText" contenteditable="true" data-placeholder="Descreva as ocorrências do turno noturno...">${richInitialHtml(data.noturno)}</div>
+        <div class="rt-editor" id="noturnoText" contenteditable="true" spellcheck="true" lang="pt-BR" data-placeholder="Descreva as ocorrências do turno noturno...">${richInitialHtml(data.noturno)}</div>
       </section>
       </div>
     `;
@@ -1088,7 +1137,7 @@
   }
 
   function cellText(i, f, value, placeholder){
-    return `<textarea class="cell-text" rows="1" data-i="${i}" data-f="${f}" placeholder="${placeholder||''}">${escapeHtml(value)}</textarea>`;
+    return `<textarea class="cell-text" rows="1" data-i="${i}" data-f="${f}" placeholder="${placeholder||''}" spellcheck="true" lang="pt-BR">${escapeHtml(value)}</textarea>`;
   }
 
   function autoGrow(el){
@@ -1947,9 +1996,10 @@
     return runs;
   }
 
-  function drawRichText(doc, runs, x, y, maxWidth, lineHeight, fontSize){
+  function drawRichText(doc, runs, x, y, maxWidth, lineHeight, fontSize, underlineColor){
     let curX = x;
     let curY = y;
+    if(underlineColor) doc.setDrawColor(underlineColor[0], underlineColor[1], underlineColor[2]);
     function setStyle(bold, italic){
       let style = 'normal';
       if(bold && italic) style = 'bolditalic';
@@ -1992,6 +2042,34 @@
     const marginX = 40;
     let y = 50;
 
+    const isDark = true; // PDF sempre gerado no modo escuro, independente do tema da tela
+    const pal = isDark ? {
+      text:[230,230,230], green:[110,200,140], greenLight:[35,60,45],
+      gray:[170,170,170], alertBg:[60,30,28], alertText:[255,150,130],
+      okBg:[30,55,38], okText:[140,225,165], gateBg:[26,40,31],
+      gateBorder:[90,180,120], gateTitle:[140,225,165], lineColor:[70,78,72],
+      bg:[20,24,21]
+    } : {
+      text:[20,20,20], green:[31,110,51], greenLight:[234,246,236],
+      gray:[120,120,120], alertBg:[253,236,234], alertText:[169,46,33],
+      okBg:[232,246,236], okText:[31,110,51], gateBg:[238,247,240],
+      gateBorder:[31,110,51], gateTitle:[31,110,51], lineColor:[220,220,220],
+      bg:[255,255,255]
+    };
+    function paintBg(){
+      doc.setFillColor(pal.bg[0], pal.bg[1], pal.bg[2]);
+      doc.rect(0, 0, doc.internal.pageSize.getWidth(), doc.internal.pageSize.getHeight(), 'F');
+    }
+    if(isDark){
+      const originalAddPage = doc.addPage.bind(doc);
+      doc.addPage = function(...args){
+        const result = originalAddPage(...args);
+        paintBg();
+        return result;
+      };
+      paintBg();
+    }
+
     try{
       const logoSrc = document.querySelector('.topbar img').src;
       doc.addImage(logoSrc, 'JPEG', marginX, 24, 90, 27);
@@ -1999,6 +2077,7 @@
 
     doc.setFont('helvetica','bold');
     doc.setFontSize(15);
+    doc.setTextColor(pal.text[0], pal.text[1], pal.text[2]);
     doc.text('Livro de Ocorrência', marginX + 105, 40);
     doc.setFontSize(10.5);
     doc.setFont('helvetica','normal');
@@ -2015,12 +2094,12 @@
     if(handoffLines.length){
       doc.setFont('helvetica','italic');
       doc.setFontSize(9);
-      doc.setTextColor(90,90,90);
+      doc.setTextColor(pal.gray[0], pal.gray[1], pal.gray[2]);
       handoffLines.forEach(line=>{
         doc.text(line, marginX, y);
         y += 14;
       });
-      doc.setTextColor(20,20,20);
+      doc.setTextColor(pal.text[0], pal.text[1], pal.text[2]);
       y += 6;
     }
 
@@ -2032,9 +2111,9 @@
       ensureSpace(28);
       doc.setFont('helvetica','bold');
       doc.setFontSize(11);
-      doc.setTextColor(31,110,51);
+      doc.setTextColor(pal.green[0], pal.green[1], pal.green[2]);
       doc.text(t, marginX, y);
-      doc.setTextColor(20,20,20);
+      doc.setTextColor(pal.text[0], pal.text[1], pal.text[2]);
       y += 18;
     }
 
@@ -2042,9 +2121,9 @@
       if(!rows.length){
         doc.setFont('helvetica','italic');
         doc.setFontSize(9);
-        doc.setTextColor(120,120,120);
+        doc.setTextColor(pal.gray[0], pal.gray[1], pal.gray[2]);
         doc.text('Nenhum registro informado.', marginX, y);
-        doc.setTextColor(20,20,20);
+        doc.setTextColor(pal.text[0], pal.text[1], pal.text[2]);
         y += 20;
         return;
       }
@@ -2053,8 +2132,8 @@
         head:[head],
         body: rows,
         margin:{left:marginX,right:marginX},
-        styles:{fontSize:9, cellPadding:5, font:'helvetica'},
-        headStyles:{fillColor:[234,246,236], textColor:[31,110,51], fontStyle:'bold'},
+        styles:{fontSize:9, cellPadding:5, font:'helvetica', textColor:pal.text, lineColor:pal.lineColor, fillColor:pal.bg},
+        headStyles:{fillColor:pal.greenLight, textColor:pal.green, fontStyle:'bold'},
         theme:'grid'
       });
       y = doc.lastAutoTable.finalY + 18;
@@ -2089,18 +2168,18 @@
       });
       const boxH = padding*2 + titleH + lineCount*lineH;
       ensureSpace(boxH + 16);
-      doc.setFillColor(238,247,240);
-      doc.setDrawColor(31,110,51);
+      doc.setFillColor(pal.gateBg[0], pal.gateBg[1], pal.gateBg[2]);
+      doc.setDrawColor(pal.gateBorder[0], pal.gateBorder[1], pal.gateBorder[2]);
       doc.setLineWidth(1);
       doc.roundedRect(marginX - 2, y - 2, 519, boxH, 4, 4, 'FD');
-      doc.setFillColor(31,110,51);
+      doc.setFillColor(pal.gateBorder[0], pal.gateBorder[1], pal.gateBorder[2]);
       doc.rect(marginX - 2, y - 2, 4, boxH, 'F');
       doc.setFont('helvetica','bold');
       doc.setFontSize(10.5);
-      doc.setTextColor(31,110,51);
+      doc.setTextColor(pal.gateTitle[0], pal.gateTitle[1], pal.gateTitle[2]);
       doc.text('GATEONE — INFORMAÇÕES IMPORTANTES', marginX + padding, y + padding + 4);
-      doc.setTextColor(20,20,20);
-      drawRichText(doc, gateRuns, marginX + padding, y + padding + titleH, maxW, lineH, 9.5);
+      doc.setTextColor(pal.text[0], pal.text[1], pal.text[2]);
+      drawRichText(doc, gateRuns, marginX + padding, y + padding + titleH, maxW, lineH, 9.5, pal.text);
       y += boxH + 16;
     }
 
@@ -2110,9 +2189,9 @@
       if(!quedaRowsPdf.length){
         doc.setFont('helvetica','italic');
         doc.setFontSize(9);
-        doc.setTextColor(120,120,120);
+        doc.setTextColor(pal.gray[0], pal.gray[1], pal.gray[2]);
         doc.text('Nenhum registro informado.', marginX, y);
-        doc.setTextColor(20,20,20);
+        doc.setTextColor(pal.text[0], pal.text[1], pal.text[2]);
         y += 20;
       }else{
         const statuses = quedaRowsPdf.map(r=> quedaStatus(r));
@@ -2121,19 +2200,19 @@
           head:[['Projeto','Data da queda','Horário da queda','Data do retorno','Horário do retorno','Grupo responsável','Status']],
           body: quedaRowsPdf.map((r,idx)=>[r.projeto||'',r.dataQueda||'',r.horaQueda||'',r.dataRetorno||'',r.horaRetorno||'',r.grupo||'', statuses[idx] ? statuses[idx].label : '']),
           margin:{left:marginX,right:marginX},
-          styles:{fontSize:9, cellPadding:5, font:'helvetica'},
-          headStyles:{fillColor:[234,246,236], textColor:[31,110,51], fontStyle:'bold'},
+          styles:{fontSize:9, cellPadding:5, font:'helvetica', textColor:pal.text, lineColor:pal.lineColor, fillColor:pal.bg},
+          headStyles:{fillColor:pal.greenLight, textColor:pal.green, fontStyle:'bold'},
           theme:'grid',
           didParseCell: function(hookData){
             if(hookData.section==='body' && hookData.column.index===6){
               const s = statuses[hookData.row.index];
               if(s && s.type==='alert'){
-                hookData.cell.styles.fillColor = [253,236,234];
-                hookData.cell.styles.textColor = [169,46,33];
+                hookData.cell.styles.fillColor = pal.alertBg;
+                hookData.cell.styles.textColor = pal.alertText;
                 hookData.cell.styles.fontStyle = 'bold';
               }else if(s && s.type==='ok'){
-                hookData.cell.styles.fillColor = [232,246,236];
-                hookData.cell.styles.textColor = [31,110,51];
+                hookData.cell.styles.fillColor = pal.okBg;
+                hookData.cell.styles.textColor = pal.okText;
                 hookData.cell.styles.fontStyle = 'bold';
               }
             }
@@ -2149,9 +2228,9 @@
       if(!falhaRowsPdf.length){
         doc.setFont('helvetica','italic');
         doc.setFontSize(9);
-        doc.setTextColor(120,120,120);
+        doc.setTextColor(pal.gray[0], pal.gray[1], pal.gray[2]);
         doc.text('Nenhum registro informado.', marginX, y);
-        doc.setTextColor(20,20,20);
+        doc.setTextColor(pal.text[0], pal.text[1], pal.text[2]);
         y += 20;
       }else{
         const statuses = falhaRowsPdf.map(r=> falhaStatus(r));
@@ -2160,19 +2239,19 @@
           head:[['Projeto','Data da falha','Horário da falha','Data do retorno','Horário do retorno','Grupo responsável','Status']],
           body: falhaRowsPdf.map((r,idx)=>[r.projeto||'',r.dataFalha||'',r.horaFalha||'',r.dataRetorno||'',r.horaRetorno||'',r.grupo||'', statuses[idx] ? statuses[idx].label : '']),
           margin:{left:marginX,right:marginX},
-          styles:{fontSize:9, cellPadding:5, font:'helvetica'},
-          headStyles:{fillColor:[234,246,236], textColor:[31,110,51], fontStyle:'bold'},
+          styles:{fontSize:9, cellPadding:5, font:'helvetica', textColor:pal.text, lineColor:pal.lineColor, fillColor:pal.bg},
+          headStyles:{fillColor:pal.greenLight, textColor:pal.green, fontStyle:'bold'},
           theme:'grid',
           didParseCell: function(hookData){
             if(hookData.section==='body' && hookData.column.index===6){
               const s = statuses[hookData.row.index];
               if(s && s.type==='alert'){
-                hookData.cell.styles.fillColor = [253,236,234];
-                hookData.cell.styles.textColor = [169,46,33];
+                hookData.cell.styles.fillColor = pal.alertBg;
+                hookData.cell.styles.textColor = pal.alertText;
                 hookData.cell.styles.fontStyle = 'bold';
               }else if(s && s.type==='ok'){
-                hookData.cell.styles.fillColor = [232,246,236];
-                hookData.cell.styles.textColor = [31,110,51];
+                hookData.cell.styles.fillColor = pal.okBg;
+                hookData.cell.styles.textColor = pal.okText;
                 hookData.cell.styles.fontStyle = 'bold';
               }
             }
@@ -2188,14 +2267,15 @@
       if(richIsEmpty(html)){
         doc.setFont('helvetica','italic');
         doc.setFontSize(9);
-        doc.setTextColor(120,120,120);
+        doc.setTextColor(pal.gray[0], pal.gray[1], pal.gray[2]);
         doc.text('Nenhum registro informado.', marginX, y);
-        doc.setTextColor(20,20,20);
+        doc.setTextColor(pal.text[0], pal.text[1], pal.text[2]);
         y += 20;
         return;
       }
       const runs = htmlToRuns(html);
-      y = drawRichText(doc, runs, marginX, y, 515, 13, 9.5);
+      doc.setTextColor(pal.text[0], pal.text[1], pal.text[2]);
+      y = drawRichText(doc, runs, marginX, y, 515, 13, 9.5, pal.text);
       y += 10;
     }
 
