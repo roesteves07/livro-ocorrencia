@@ -649,6 +649,8 @@
   const QUEDAS_COLLECTION = 'quedas_imagens'; // coleção compartilhada entre todos os dias
   const CHECKLIST_COLLECTION = 'checklist_equipamentos'; // coleção compartilhada entre todos os dias
   const FALHAS_COLLECTION = 'falhas_alarme'; // coleção compartilhada entre todos os dias
+  const GLOBALS_COLLECTION = 'globais'; // coleção para informações globais compartilhadas (ex: GateOne)
+  const GATEONE_DOC_ID = 'gateOne';
 
   // Funções que substituem o antigo window.storage, agora usando Firestore.
   async function dbGetDay(key){
@@ -687,6 +689,13 @@
   }
   async function dbDeleteFalha(id){
     await deleteDoc(doc(db, FALHAS_COLLECTION, id));
+  }
+  async function dbGetGateOne(){
+    const snap = await getDoc(doc(db, GLOBALS_COLLECTION, GATEONE_DOC_ID));
+    return snap.exists() ? (snap.data().texto || '') : '';
+  }
+  async function dbSetGateOne(texto){
+    await setDoc(doc(db, GLOBALS_COLLECTION, GATEONE_DOC_ID), { texto });
   }
   async function dbListMonthKeys(prefix){
     // prefix no formato "YYYY-MM"; documentId() permite range query pelo próprio ID do doc
@@ -743,7 +752,6 @@
       staffDiurno:[],
       staffNoturno:[],
       pm: pmBlankRows(6),
-      gateOne:'',
       diurno:'',
       noturno:'',
       atualizadoPor:'',
@@ -765,7 +773,8 @@
     autosaveTimer:null,
     quedaImagens:[],
     checklist:[],
-    falhasAlarme:[]
+    falhasAlarme:[],
+    gateOne:''
   };
 
   const today = new Date();
@@ -897,6 +906,15 @@
         }
         delete merged.quedaImagens;
       }
+      if(parsed && typeof parsed.gateOne === 'string' && parsed.gateOne.trim()){
+        try{
+          const existing = await dbGetGateOne();
+          if(!existing || !existing.trim()){
+            await dbSetGateOne(parsed.gateOne);
+          }
+        }catch(e){ /* ignora erro de migração do GateOne */ }
+        delete merged.gateOne;
+      }
       state.currentData = merged;
     }catch(e){
       state.currentData = defaultData();
@@ -904,6 +922,7 @@
     await loadQuedaImagens();
     await loadChecklist();
     await loadFalhasAlarme();
+    await loadGateOne();
     renderDayPanel();
   }
 
@@ -944,6 +963,27 @@
       console.error('Erro ao carregar falhas de comunicação', e);
       state.falhasAlarme = state.falhasAlarme || [];
     }
+  }
+
+  async function loadGateOne(){
+    try{
+      state.gateOne = await dbGetGateOne();
+    }catch(e){
+      console.error('Erro ao carregar GateOne', e);
+      state.gateOne = state.gateOne || '';
+    }
+  }
+
+  let gateOneSaveTimer = null;
+  function scheduleGateOneAutosave(){
+    if(gateOneSaveTimer) clearTimeout(gateOneSaveTimer);
+    gateOneSaveTimer = setTimeout(async ()=>{
+      try{
+        await dbSetGateOne(state.gateOne || '');
+      }catch(e){
+        console.error('Erro ao salvar GateOne', e);
+      }
+    }, 1000);
   }
 
   function fieldDateLabel(){
@@ -996,7 +1036,7 @@
             <div class="rt-emoji-panel"></div>
           </div>
         </div>
-        <div class="rt-editor" id="gateOneText" contenteditable="true" spellcheck="true" lang="pt-BR" data-placeholder="Avisos urgentes para toda a operação (ex: instabilidades, procedimentos temporários, alertas gerais)...">${richInitialHtml(data.gateOne)}</div>
+        <div class="rt-editor" id="gateOneText" contenteditable="true" spellcheck="true" lang="pt-BR" data-placeholder="Avisos urgentes para toda a operação (ex: instabilidades, procedimentos temporários, alertas gerais)...">${richInitialHtml(state.gateOne)}</div>
       </section>
 
       <section class="block">
@@ -1060,7 +1100,7 @@
     renderQuedaTable();
     renderFalhaTable();
 
-    document.getElementById('gateOneText').addEventListener('input', e=>{ data.gateOne = e.target.innerHTML; scheduleAutosave(); });
+    document.getElementById('gateOneText').addEventListener('input', e=>{ state.gateOne = e.target.innerHTML; scheduleGateOneAutosave(); });
     document.getElementById('diurnoText').addEventListener('input', e=>{ data.diurno = e.target.innerHTML; scheduleAutosave(); });
     document.getElementById('noturnoText').addEventListener('input', e=>{ data.noturno = e.target.innerHTML; scheduleAutosave(); });
     document.querySelectorAll('.rt-toolbar').forEach(toolbar=>{
@@ -1837,9 +1877,9 @@
     }
     lines.push('');
 
-    if(!richIsEmpty(looksLikeHtml(data.gateOne) ? data.gateOne : plainTextToHtml(data.gateOne))){
+    if(!richIsEmpty(looksLikeHtml(state.gateOne) ? state.gateOne : plainTextToHtml(state.gateOne))){
       lines.push('🔶 *GATEONE — INFORMAÇÕES IMPORTANTES* 🔶');
-      lines.push(htmlToPlainFormatted(looksLikeHtml(data.gateOne) ? data.gateOne : plainTextToHtml(data.gateOne)));
+      lines.push(htmlToPlainFormatted(looksLikeHtml(state.gateOne) ? state.gateOne : plainTextToHtml(state.gateOne)));
       lines.push('');
     }
 
@@ -2159,8 +2199,8 @@
     sectionTitle('ACIONAMENTO DA POLÍCIA MILITAR');
     table(['Conta','Cliente','Hora','Atendente','Observações'], data.pm.filter(r=>r.conta||r.cliente||r.hora||r.atendente||r.obs).map(r=>[r.conta||'',r.cliente||'',r.hora||'',r.atendente||'',r.obs||'']));
 
-    if(data.gateOne && !richIsEmpty(looksLikeHtml(data.gateOne) ? data.gateOne : plainTextToHtml(data.gateOne))){
-      const gateHtml = looksLikeHtml(data.gateOne) ? data.gateOne : plainTextToHtml(data.gateOne);
+    if(state.gateOne && !richIsEmpty(looksLikeHtml(state.gateOne) ? state.gateOne : plainTextToHtml(state.gateOne))){
+      const gateHtml = looksLikeHtml(state.gateOne) ? state.gateOne : plainTextToHtml(state.gateOne);
       const gateRuns = htmlToRuns(gateHtml);
       const padding = 10;
       const titleH = 16;
