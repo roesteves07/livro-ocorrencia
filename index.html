@@ -649,8 +649,7 @@
   const QUEDAS_COLLECTION = 'quedas_imagens'; // coleção compartilhada entre todos os dias
   const CHECKLIST_COLLECTION = 'checklist_equipamentos'; // coleção compartilhada entre todos os dias
   const FALHAS_COLLECTION = 'falhas_alarme'; // coleção compartilhada entre todos os dias
-  const GLOBALS_COLLECTION = 'globais'; // coleção para informações globais compartilhadas (ex: GateOne)
-  const GATEONE_DOC_ID = 'gateOne';
+  const GATEONE_KEY = '_global_gateone'; // documento reservado dentro de DIAS_COLLECTION (não é uma data, não aparece no calendário)
 
   // Funções que substituem o antigo window.storage, agora usando Firestore.
   async function dbGetDay(key){
@@ -691,11 +690,11 @@
     await deleteDoc(doc(db, FALHAS_COLLECTION, id));
   }
   async function dbGetGateOne(){
-    const snap = await getDoc(doc(db, GLOBALS_COLLECTION, GATEONE_DOC_ID));
+    const snap = await getDoc(doc(db, DIAS_COLLECTION, GATEONE_KEY));
     return snap.exists() ? (snap.data().texto || '') : '';
   }
   async function dbSetGateOne(texto){
-    await setDoc(doc(db, GLOBALS_COLLECTION, GATEONE_DOC_ID), { texto });
+    await setDoc(doc(db, DIAS_COLLECTION, GATEONE_KEY), { texto });
   }
   async function dbListMonthKeys(prefix){
     // prefix no formato "YYYY-MM"; documentId() permite range query pelo próprio ID do doc
