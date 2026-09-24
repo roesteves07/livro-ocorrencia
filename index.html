@@ -971,17 +971,25 @@
     }catch(e){
       console.error('Erro ao carregar GateOne', e);
       state.gateOne = state.gateOne || '';
+      state.gateOneLoadError = true;
     }
   }
 
   let gateOneSaveTimer = null;
   function scheduleGateOneAutosave(){
+    const statusEl = document.getElementById('gateOneSaveStatus');
+    if(statusEl){ statusEl.textContent = 'salvando...'; statusEl.style.color = '#f5a623'; }
     if(gateOneSaveTimer) clearTimeout(gateOneSaveTimer);
     gateOneSaveTimer = setTimeout(async ()=>{
       try{
         await dbSetGateOne(state.gateOne || '');
+        const s = document.getElementById('gateOneSaveStatus');
+        if(s){ s.textContent = 'salvo ✓'; s.style.color = '#3fb950'; setTimeout(()=>{ if(s) s.textContent=''; }, 2500); }
       }catch(e){
         console.error('Erro ao salvar GateOne', e);
+        const s = document.getElementById('gateOneSaveStatus');
+        if(s){ s.textContent = 'erro ao salvar! verifique a conexão'; s.style.color = '#e5484d'; }
+        alert('Não foi possível salvar as informações do GateOne. Verifique sua conexão com a internet e tente novamente.\n\nDetalhe técnico: ' + (e && e.message ? e.message : e));
       }
     }, 1000);
   }
@@ -1026,7 +1034,7 @@
       </section>
 
       <section class="block alert-block">
-        <h3>⚠️ GateOne — Informações Importantes</h3>
+        <h3>⚠️ GateOne — Informações Importantes <span id="gateOneSaveStatus" style="font-size:12px;font-weight:normal;">${state.gateOneLoadError ? '<span style="color:#e5484d">erro ao carregar — recarregue a página</span>' : ''}</span></h3>
         <div class="rt-toolbar" data-target="gateOneText">
           <button type="button" class="rt-btn" data-cmd="bold" title="Negrito"><b>N</b></button>
           <button type="button" class="rt-btn" data-cmd="italic" title="Itálico"><i>I</i></button>
