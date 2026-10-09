@@ -587,7 +587,6 @@
       <option value="DAVI HING">DAVI HING</option>
       <option value="GEOVANA MOURA">GEOVANA MOURA</option>
       <option value="MARIA EDUARDA">MARIA EDUARDA</option>
-      <option value="SARA ADRIANE">SARA ADRIANE</option>
       <option value="THAIS DINIZ">THAIS DINIZ</option>
       <option value="VITORIA RODRIGUES">VITORIA RODRIGUES</option>
       <option value="__custom__">Outro (digitar)</option>
@@ -719,7 +718,8 @@
 (function(){
   const DOW = ['dom','seg','ter','qua','qui','sex','sáb'];
   const MONTHS = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
-  const OPERATOR_NAMES = ['ALINE FACUNDO','BIANCA SANCHES','CAMILA MORAES','DAVI HING','GEOVANA MOURA','MARIA EDUARDA','SARA ADRIANE','THAIS DINIZ','VITORIA RODRIGUES'];
+  const FORMER_OPERATORS = ['SARA ADRIANE']; // saiu em 08/10/2026: só aparece em dias antigos que já a tinham salva
+  const OPERATOR_NAMES = ['ALINE FACUNDO','BIANCA SANCHES','CAMILA MORAES','DAVI HING','GEOVANA MOURA','MARIA EDUARDA','THAIS DINIZ','VITORIA RODRIGUES'];
   const EMOJI_LIST = [
     '😀','😃','😄','😁','😆','😅','🙂','😊','😇','🙃',
     '😉','😍','🥰','😘','😋','😛','🤪','🤨','🧐','😎',
@@ -1236,9 +1236,10 @@
   }
 
   function nameSelect(i, row){
-    const isCustom = !!row.nomeCustom || (row.nome && !OPERATOR_NAMES.includes(row.nome));
+    const isFormer = FORMER_OPERATORS.includes(row.nome);
+    const isCustom = !isFormer && (!!row.nomeCustom || (row.nome && !OPERATOR_NAMES.includes(row.nome)));
     const value = row.nome || '';
-    const opts = OPERATOR_NAMES.map(n=>`<option value="${escapeAttr(n)}" ${value===n?'selected':''}>${escapeHtml(n)}</option>`).join('');
+    const opts = (isFormer ? [...OPERATOR_NAMES, row.nome].sort() : OPERATOR_NAMES).map(n=>`<option value="${escapeAttr(n)}" ${value===n?'selected':''}>${escapeHtml(n)}</option>`).join('');
     let html = `<select class="name-select" data-i="${i}" data-f="nome">
       <option value="" ${(!isCustom && value==='')?'selected':''}>Selecionar...</option>
       ${opts}
